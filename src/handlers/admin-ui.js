@@ -1,6 +1,6 @@
 import { checkAuth, authResponse } from '../middleware/auth.js';
 import { formatBytes } from '../utils/format.js';
-import { getThemeStyles } from '../themes/styles.js';
+import { getThemeStyles, getFooterHtml } from '../themes/styles.js';
 
 export async function handleAdminUI(request, env, sys) {
   if (!checkAuth(request, env)) {
@@ -1083,6 +1083,8 @@ export async function handleAdminUI(request, env, sys) {
       </div>
     </div>
   </div>
+
+    ${getFooterHtml()}
 
   <script>
     // Tab 切换

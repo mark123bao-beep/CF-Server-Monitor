@@ -524,7 +524,7 @@ export async function handleServerDetail(request, env, sys, viewId) {
         </div>
         <span class="status-badge ${isOnline ? 'online' : 'offline'}" id="head-status">
           <span class="pulse-dot ${isOnline ? 'online' : 'offline'}"></span>
-          ${isOnline ? 'CONNECTED' : 'DISCONNECTED'}
+          ${isOnline ? 'ONLINE' : 'OFFLINE'}
         </span>
       </div>
       <div class="sysinfo-grid" id="info-panel">
@@ -1223,7 +1223,7 @@ export async function handleServerDetail(request, env, sys, viewId) {
     // 初始化
     // =============================================
     function init() {
-      console.log(\`\n╔══════════════════════════════════════╗\n║   Server Monitor Terminal v2.0      ║\n║   Connected to: \${serverId.padEnd(20)}║\n╚══════════════════════════════════════╝\`);
+      console.log(\`\n╔══════════════════════════════════════╗\n║   Server Monitor Terminal    ║\n║   Connected to: \${serverId.padEnd(20)}║\n╚══════════════════════════════════════╝\`);
       
       // 初始加载
       fetchCurrentStatus();
