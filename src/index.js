@@ -1,4 +1,4 @@
-import { initDatabase, cleanupOldData, getMetricsHistory } from './database/schema.js';
+import { initDatabase, cleanupOldData, getMetricsHistory, getAggregatedHistory } from './database/schema.js';
 import { handleAdminAPI } from './handlers/admin.js';
 import { handleAdminUI } from './handlers/admin-ui.js';
 import { handleUpdate } from './handlers/update.js';
@@ -9,6 +9,7 @@ import { checkAuth, authResponse } from './middleware/auth.js';
 const historyCache = new Map();
 const CACHE_TTL = 60000;
 const MAX_HOURS = 72;
+const ONE_HOUR_MS = 60 * 60 * 1000;
 
 async function fetchHistoryData(env, sys, request, id, hours, columns) {
   if (sys.is_public !== 'true' && !checkAuth(request, env)) {
@@ -36,6 +37,43 @@ async function fetchHistoryData(env, sys, request, id, hours, columns) {
   }
   
   const data = await getMetricsHistory(env.DB, id, clampedHours, columns);
+  
+  historyCache.set(cacheKey, {
+    timestamp: Date.now(),
+    data: data
+  });
+  
+  return new Response(JSON.stringify(data), {
+    headers: { 'Content-Type': 'application/json', 'X-Cache': 'MISS' }
+  });
+}
+
+async function fetchAggregatedHistoryData(env, sys, request, id, hours, columns) {
+  if (sys.is_public !== 'true' && !checkAuth(request, env)) {
+    return authResponse(sys.site_title);
+  }
+  
+  if (!id) return new Response('Missing ID', { status: 400 });
+  
+  const isLoggedIn = checkAuth(request, env);
+  let serverQuery = 'SELECT id FROM servers WHERE id = ?';
+  if (!isLoggedIn) {
+    serverQuery += " AND is_hidden != '1'";
+  }
+  const server = await env.DB.prepare(serverQuery).bind(id).first();
+  if (!server) return new Response('Not Found', { status: 404 });
+  
+  const clampedHours = Math.min(hours, MAX_HOURS);
+  
+  const cacheKey = `agg_${id}_${clampedHours}_${columns}`;
+  const cached = historyCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return new Response(JSON.stringify(cached.data), {
+      headers: { 'Content-Type': 'application/json', 'X-Cache': 'HIT' }
+    });
+  }
+  
+  const data = await getAggregatedHistory(env.DB, id, clampedHours, columns);
   
   historyCache.set(cacheKey, {
     timestamp: Date.now(),
@@ -86,6 +124,12 @@ export default {
         const hours = parseFloat(url.searchParams.get('hours') || '24');
         const allColumns = 'cpu, ram, disk, processes, net_in_speed, net_out_speed, tcp_conn, udp_conn, ping_ct, ping_cu, ping_cm, ping_bd';
         return fetchHistoryData(env, sys, request, id, hours, allColumns);
+      }},
+      { method: 'GET', path: '/api/history/agg', handler: () => {
+        const id = url.searchParams.get('id');
+        const hours = parseFloat(url.searchParams.get('hours') || '24');
+        const allColumns = 'cpu, ram, disk, processes, net_in_speed, net_out_speed, tcp_conn, udp_conn, ping_ct, ping_cu, ping_cm, ping_bd';
+        return fetchAggregatedHistoryData(env, sys, request, id, hours, allColumns);
       }},
       { method: 'GET', path: '/', handler: () => {
         const viewId = url.searchParams.get('id');

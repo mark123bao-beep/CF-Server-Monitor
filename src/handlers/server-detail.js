@@ -736,6 +736,8 @@ export async function handleServerDetail(request, env, sys, viewId) {
     const serverId = "${viewId}";
     let currentHours = 1;
     let statusTimer = null;
+    let oneHourDataCache = null;
+    const ONE_HOUR_MS = 60 * 60 * 1000;
     
     // 格式化工具
     const formatBytes = (bytes) => {
@@ -1129,14 +1131,52 @@ export async function handleServerDetail(request, env, sys, viewId) {
       chart.update('none');
     }
     
-    // =============================================
-    // 加载所有历史数据（合并请求，减少API调用）
-    // =============================================
+    function mergeDataSets(rawData, aggData) {
+      if (!rawData || rawData.length === 0) return aggData || [];
+      if (!aggData || aggData.length === 0) return rawData;
+      
+      const map = new Map();
+      
+      for (const item of aggData) {
+        const ts = Number(item.timestamp);
+        map.set(ts, item);
+      }
+      
+      for (const item of rawData) {
+        const ts = Number(item.timestamp);
+        map.set(ts, item);
+      }
+      
+      const result = Array.from(map.values());
+      result.sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
+      
+      return result;
+    }
+    
     async function loadAllHistory(hours) {
       try {
-        const res = await fetch(\`/api/history/all?id=\${serverId}&hours=\${hours}\`);
-        if (!res.ok) return;
-        const allData = await res.json();
+        let allData;
+        
+        if (hours <= 1) {
+          const res = await fetch(\`/api/history/all?id=\${serverId}&hours=\${hours}\`);
+          if (!res.ok) return;
+          allData = await res.json();
+          
+          oneHourDataCache = allData;
+        } else {
+          if (!oneHourDataCache) {
+            const oneHourRes = await fetch(\`/api/history/all?id=\${serverId}&hours=1\`);
+            if (oneHourRes.ok) {
+              oneHourDataCache = await oneHourRes.json();
+            }
+          }
+          
+          const aggRes = await fetch(\`/api/history/agg?id=\${serverId}&hours=\${hours}\`);
+          if (!aggRes.ok) return;
+          const aggData = await aggRes.json();
+          
+          allData = mergeDataSets(oneHourDataCache, aggData);
+        }
         
         updateChartDataset(charts.cpu, 0, allData, 'timestamp', 'cpu');
         updateChartDataset(charts.ram, 0, allData, 'timestamp', 'ram');

@@ -494,10 +494,8 @@ export async function getMetricsHistory(db, serverId, hours, columns) {
 
   const aggColumns = mapColumnsToAggregated(columns);
 
-  // 聚合完成时间（关键）
   const lastAggregatedTo = await getLastAggregatedTo(db);
 
-  // raw 和 agg 的分界点（避免断层）
   const rawCutoff = lastAggregatedTo || (now - 30 * 60 * 1000);
 
   const map = new Map();
@@ -510,9 +508,6 @@ export async function getMetricsHistory(db, serverId, hours, columns) {
     'rawCutoff:', new Date(rawCutoff).toISOString()
   );
 
-  // ======================================================
-  // 1. RAW 数据（最近数据）
-  // ======================================================
   const rawStart = Math.max(cutoff, rawCutoff);
 
   const rawResult = await db.prepare(`
@@ -533,9 +528,6 @@ export async function getMetricsHistory(db, serverId, hours, columns) {
 
   console.log(`[History] RAW: ${rawResult.results.length}`);
 
-  // ======================================================
-  // 2. AGG 数据（历史数据）
-  // ======================================================
   for (const phase of AGGREGATE_PHASES) {
     const phaseStart = now - phase.maxHours * 3600 * 1000;
     const phaseEnd = now - phase.minHours * 3600 * 1000;
@@ -564,7 +556,6 @@ export async function getMetricsHistory(db, serverId, hours, columns) {
     for (const row of aggResult.results) {
       const ts = Number(row.timestamp);
 
-      // ⭐关键：避免覆盖 raw 数据
       if (!map.has(ts)) {
         map.set(ts, {
           ...row,
@@ -576,13 +567,74 @@ export async function getMetricsHistory(db, serverId, hours, columns) {
     console.log(`[History] ${phase.name}: ${aggResult.results.length}`);
   }
 
-  // ======================================================
-  // 3. 输出排序
-  // ======================================================
   const result = Array.from(map.values());
   result.sort((a, b) => a.timestamp - b.timestamp);
 
   console.log(`[History] FINAL: ${result.length}`);
+
+  return result;
+}
+
+export async function getAggregatedHistory(db, serverId, hours, columns) {
+  const now = Date.now();
+  const oneHourMs = 60 * 60 * 1000;
+
+  const aggColumns = mapColumnsToAggregated(columns);
+
+  const queryStart = now - hours * oneHourMs;
+  const queryEnd = now - oneHourMs;
+
+  const map = new Map();
+
+  console.log(
+    '[Aggregated]',
+    'server:', serverId,
+    'hours:', hours,
+    'range:', new Date(queryStart).toISOString(),
+    '-',
+    new Date(queryEnd).toISOString()
+  );
+
+  for (const phase of AGGREGATE_PHASES) {
+    const phaseStart = now - phase.maxHours * 3600 * 1000;
+    const phaseEnd = now - phase.minHours * 3600 * 1000;
+
+    const phaseQueryStart = Math.max(queryStart, phaseStart);
+    const phaseQueryEnd = Math.min(queryEnd, phaseEnd);
+
+    if (phaseQueryStart >= phaseQueryEnd) continue;
+
+    const aggResult = await db.prepare(`
+      SELECT 
+        bucket AS timestamp,
+        ${aggColumns}
+      FROM metrics_aggregated
+      WHERE server_id = ?
+        AND bucket_size = ?
+        AND bucket >= ?
+        AND bucket < ?
+    `).bind(
+      serverId,
+      phase.bucketSeconds,
+      phaseQueryStart,
+      phaseQueryEnd
+    ).all();
+
+    for (const row of aggResult.results) {
+      const ts = Number(row.timestamp);
+      map.set(ts, {
+        ...row,
+        timestamp: ts
+      });
+    }
+
+    console.log(`[Aggregated] ${phase.name}: ${aggResult.results.length}`);
+  }
+
+  const result = Array.from(map.values());
+  result.sort((a, b) => a.timestamp - b.timestamp);
+
+  console.log(`[Aggregated] FINAL: ${result.length}`);
 
   return result;
 }
