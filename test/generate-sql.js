@@ -99,7 +99,6 @@ DELETE FROM settings;
 
 const appearanceOptions = {
   site_title: 'Cloudflare Server Monitor',
-  admin_title: 'Admin Panel',
   custom_bg: 'https://cdn.nodeimage.com/i/fux0OSoFzVZQsn9uZmSDbIpKzZw2r8GW.webp',
   custom_head: '<meta content="test">',
   custom_script: 'console.log("Hello, World!");',

@@ -121,20 +121,6 @@ export const http = {
   }
 }
 
-export const getAuthHeader = () => {
-  const token = localStorage.getItem('jwt_token')
-  if (!token) return {}
-  return { 'Authorization': 'Bearer ' + token }
-}
-
-export const getTurnstileHeader = () => {
-  const token = localStorage.getItem('turnstile_token')
-  if (token) {
-    return { 'X-Turnstile-Token': token }
-  }
-  return {}
-}
-
 export const isAdminLoggedIn = () => {
   return !!localStorage.getItem('jwt_token')
 }

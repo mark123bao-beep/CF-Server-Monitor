@@ -117,12 +117,6 @@ export const fetchServerDetail = async (id) => {
   return result.data
 }
 
-export const fetchServerHistory = async (id, metric, hours) => {
-  const result = await http.get(`/api/history?id=${id}&metric=${metric}&hours=${hours}`)
-  if (result.error) return []
-  return result.data || []
-}
-
 export const fetchAllHistory = async (id, hours) => {
   const result = await http.get(`/api/history/all?id=${id}&hours=${hours}`)
   if (result.error) return null

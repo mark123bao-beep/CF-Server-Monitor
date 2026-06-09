@@ -11,6 +11,9 @@ export async function updateDatabase(db) {
     
     const historyCols = await addHistoryColumns(db);
     results.push({ name: 'metrics_history 表列更新', ...historyCols });
+
+    const historyRowid = await optimizeMetricsHistoryRowid(db);
+    results.push({ name: 'metrics_history 写入优化', ...historyRowid });
     
     const staleCleanup = await cleanupStaleSettings(db);
     results.push({ name: '废弃 settings key 清理', ...staleCleanup });
@@ -113,6 +116,107 @@ async function addHistoryColumns(db) {
     return { success: true, added };
   } catch (e) {
     console.error('添加 metrics_history 表列失败:', e);
+    return { success: false, error: e.message };
+  }
+}
+
+async function optimizeMetricsHistoryRowid(db) {
+  try {
+    const table = await db.prepare(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'metrics_history'`
+    ).first();
+
+    if (!table || !table.sql) {
+      return { success: true, optimized: 0, message: 'metrics_history 表不存在' };
+    }
+
+    if (!/AUTOINCREMENT/i.test(table.sql)) {
+      await db.prepare(`
+        CREATE INDEX IF NOT EXISTS idx_history_server_time
+        ON metrics_history(server_id, timestamp)
+      `).run();
+      return { success: true, optimized: 0, message: '已是优化结构' };
+    }
+
+    const oldTable = await db.prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'metrics_history_old'`
+    ).first();
+    if (oldTable) {
+      return { success: false, error: '检测到上次迁移遗留的 metrics_history_old，请先人工确认后处理' };
+    }
+
+    await db.prepare(`DROP INDEX IF EXISTS idx_history_server_time`).run();
+    await db.prepare(`DROP TABLE IF EXISTS metrics_history_new`).run();
+    await db.prepare(`
+      CREATE TABLE metrics_history_new (
+        id INTEGER PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        timestamp INTEGER DEFAULT 0,
+        cpu REAL DEFAULT 0,
+        ram REAL DEFAULT 0,
+        disk REAL DEFAULT 0,
+        load_avg TEXT DEFAULT '0',
+        net_in_speed REAL DEFAULT 0,
+        net_out_speed REAL DEFAULT 0,
+        net_rx REAL DEFAULT 0,
+        net_tx REAL DEFAULT 0,
+        processes INTEGER DEFAULT 0,
+        tcp_conn INTEGER DEFAULT 0,
+        udp_conn INTEGER DEFAULT 0,
+        ping_ct INTEGER DEFAULT 0,
+        ping_cu INTEGER DEFAULT 0,
+        ping_cm INTEGER DEFAULT 0,
+        ping_bd INTEGER DEFAULT 0,
+        ram_total REAL DEFAULT 0,
+        ram_used REAL DEFAULT 0,
+        swap_total REAL DEFAULT 0,
+        swap_used REAL DEFAULT 0,
+        disk_total REAL DEFAULT 0,
+        disk_used REAL DEFAULT 0,
+        cpu_cores INTEGER DEFAULT 0,
+        cpu_info TEXT DEFAULT '',
+        arch TEXT DEFAULT '',
+        os TEXT DEFAULT '',
+        country TEXT DEFAULT '',
+        ip_v4 TEXT DEFAULT '0',
+        ip_v6 TEXT DEFAULT '0',
+        boot_time TEXT DEFAULT '',
+        FOREIGN KEY (server_id) REFERENCES servers(id)
+      )
+    `).run();
+
+    await db.prepare(`
+      INSERT INTO metrics_history_new (
+        id, server_id, timestamp, cpu, ram, disk, load_avg,
+        net_in_speed, net_out_speed, net_rx, net_tx,
+        processes, tcp_conn, udp_conn,
+        ping_ct, ping_cu, ping_cm, ping_bd,
+        ram_total, ram_used, swap_total, swap_used,
+        disk_total, disk_used,
+        cpu_cores, cpu_info, arch, os, country, ip_v4, ip_v6, boot_time
+      )
+      SELECT
+        id, server_id, timestamp, cpu, ram, disk, load_avg,
+        net_in_speed, net_out_speed, net_rx, net_tx,
+        processes, tcp_conn, udp_conn,
+        ping_ct, ping_cu, ping_cm, ping_bd,
+        ram_total, ram_used, swap_total, swap_used,
+        disk_total, disk_used,
+        cpu_cores, cpu_info, arch, os, country, ip_v4, ip_v6, boot_time
+      FROM metrics_history
+    `).run();
+
+    await db.prepare(`ALTER TABLE metrics_history RENAME TO metrics_history_old`).run();
+    await db.prepare(`ALTER TABLE metrics_history_new RENAME TO metrics_history`).run();
+    await db.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_history_server_time
+      ON metrics_history(server_id, timestamp)
+    `).run();
+    await db.prepare(`DROP TABLE metrics_history_old`).run();
+
+    return { success: true, optimized: 1, message: '已移除 AUTOINCREMENT，降低上报写入放大' };
+  } catch (e) {
+    console.error('优化 metrics_history 写入结构失败:', e);
     return { success: false, error: e.message };
   }
 }

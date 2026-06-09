@@ -1,6 +1,6 @@
 import { initDatabase, cleanupOldData, getMetricsHistory, rebuildDatabase } from './database/schema.js';
 import { checkOfflineNodes } from './services/notification.js';
-import { updateDatabase, cleanupStaleSettings } from './database/updateDatabase.js';
+import { updateDatabase } from './database/updateDatabase.js';
 import { handleAdminAPI } from './handlers/admin.js';
 import { serveFrontend } from './handlers/frontend.js';
 import { handleUpdate, handleWebSocketUpgrade } from './handlers/update.js';
@@ -8,7 +8,7 @@ import { handleServerAPI, handleServersAPI } from './handlers/dashboard.js';
 import { loadSettings, loadSiteSettings } from './utils/settings.js';
 import { checkAuth, simpleAuthResponse } from './middleware/auth.js';
 import { getServerDetail, getMetricsHistoryCache, setMetricsHistoryCache } from './utils/cache.js';
-import { createSuccessResponse, createErrorResponse, createUnauthorizedResponse, createBadRequestResponse } from './utils/errors.js';
+import { createSuccessResponse, createUnauthorizedResponse, createBadRequestResponse } from './utils/errors.js';
 
 // Durable Objects: 实时指标广播
 // 显式 import + extends，确保 wrangler 静态分析器能在入口文件直接识别此 DO 类
@@ -126,8 +126,6 @@ async function fetchHistoryData(env, request, id, hours, columns, sys = null) {
 
 export default {
   async fetch(request, env, ctx) {
-    await initDatabase(env.DB);
-
     const url = new URL(request.url);
     const method = request.method;
     const path = url.pathname;
@@ -156,6 +154,10 @@ export default {
     ];
 
     const isApiRequest = path.startsWith('/api/') || path.startsWith('/admin/api');
+    if (path === '/api/config' || path === '/rebuild') {
+      await initDatabase(env.DB);
+    }
+
     let setTurnstileCookie = false;
     let sys = null;
     
@@ -272,14 +274,6 @@ export default {
         await ensureFullSettings();
         return handleAdminAPI(request, env, sys);
       }},
-      { method: 'GET', path: '/clear', handler: async () => {
-        await ensureSiteSettings();
-        if (!await checkAuth(request, env, sys)) {
-          return simpleAuthResponse();
-        }
-        const result = await cleanupOldData(env.DB);
-        return createSuccessResponse(result);
-      }},
       { method: 'GET', path: '/updateDatabase', handler: async () => {
         await ensureSiteSettings();
         if (!await checkAuth(request, env, sys)) {
@@ -326,8 +320,6 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    await initDatabase(env.DB);
-    
     const cron = event.cron;
     console.log(`[Cron] 定时任务触发: ${cron}`);
     

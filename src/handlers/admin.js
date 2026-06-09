@@ -2,6 +2,7 @@ import { checkAuth, simpleAuthResponse, validateCredentials, generateToken } fro
 import { clearNotificationSettingsCache } from '../services/notification.js';
 import { getLatestMetricsForAllServers, getAllServers } from '../database/schema.js';
 import { clearServersListCache, clearServerDetailCache } from '../utils/cache.js';
+import { mergeMetricsIntoServer } from '../utils/metrics.js';
 
 async function md5Hash(input) {
   const encoder = new TextEncoder();
@@ -125,41 +126,71 @@ export async function handleAdminAPI(request, env, sys) {
     }
     else if (data.action === 'list') {
       const servers = await getAllServers(env.DB);
-
       const latestMetricsMap = await getLatestMetricsForAllServers(env.DB);
       
       const now = Date.now();
       const ONLINE_THRESHOLD = 300000;
+      const stats = {
+        total: servers.length,
+        online: 0,
+        offline: 0,
+        total_cpu: 0,
+        total_ram: 0,
+        total_disk: 0,
+        total_net_in: 0,
+        total_net_out: 0,
+        avg_cpu: 0,
+        avg_ram: 0,
+        avg_disk: 0
+      };
       
       const serversWithStatus = servers.map(server => {
         const latestMetrics = latestMetricsMap.get(server.id);
-        let lastUpdated = 0;
+        const item = { ...server };
         let isOnline = false;
         
         if (latestMetrics) {
-          lastUpdated = latestMetrics.timestamp;
-          isOnline = (now - lastUpdated) < ONLINE_THRESHOLD;
+          isOnline = (now - latestMetrics.timestamp) < ONLINE_THRESHOLD;
+          mergeMetricsIntoServer(item, latestMetrics);
+        } else {
+          item.last_updated = 0;
+          item.is_online = false;
+          item.cpu_cores = 0;
+          item.cpu_info = '';
+          item.arch = '';
+          item.os = '';
+          item.ip_v4 = '0';
+          item.ip_v6 = '0';
+          item.boot_time = '';
         }
         
-        return {
-          ...server,
-          last_updated: lastUpdated,
-          is_online: isOnline,
-          cpu_cores: latestMetrics?.cpu_cores || 0,
-          cpu_info: latestMetrics?.cpu_info || '',
-          arch: latestMetrics?.arch || '',
-          os: latestMetrics?.os || '',
-          country: latestMetrics?.country || server.country || '',
-          ip_v4: latestMetrics?.ip_v4 || '0',
-          ip_v6: latestMetrics?.ip_v6 || '0',
-          boot_time: latestMetrics?.boot_time || ''
-        };
+        item.is_online = isOnline;
+        if (!item.country) item.country = server.country || '';
+
+        if (isOnline) {
+          stats.online++;
+          stats.total_cpu += parseFloat(item.cpu) || 0;
+          stats.total_ram += parseFloat(item.ram) || 0;
+          stats.total_disk += parseFloat(item.disk) || 0;
+          stats.total_net_in += parseFloat(item.net_in_speed) || 0;
+          stats.total_net_out += parseFloat(item.net_out_speed) || 0;
+        } else {
+          stats.offline++;
+        }
+        
+        return item;
       });
+      
+      if (stats.online > 0) {
+        stats.avg_cpu = (stats.total_cpu / stats.online).toFixed(2);
+        stats.avg_ram = (stats.total_ram / stats.online).toFixed(2);
+        stats.avg_disk = (stats.total_disk / stats.online).toFixed(2);
+      }
 
       return new Response(JSON.stringify({
         success: true,
         servers: serversWithStatus,
-        latestMetricsMap: Object.fromEntries(latestMetricsMap)
+        stats
       }), {
         headers: { 'Content-Type': 'application/json' }
       });
@@ -167,7 +198,7 @@ export async function handleAdminAPI(request, env, sys) {
     else if (data.action === 'save_settings') {
       const settings = data.settings || {};
 
-      const APPEARANCE_FIELDS = ['site_title', 'admin_title', 'custom_bg', 'custom_head', 'custom_script'];
+      const APPEARANCE_FIELDS = ['site_title', 'custom_bg', 'custom_head', 'custom_script'];
       const SITE_FIELDS = ['is_public', 'show_price', 'show_expire', 'show_bw', 'show_tf', 'tg_notify', 'tg_bot_token', 'tg_chat_id', 'turnstile_enabled', 'turnstile_site_key', 'turnstile_secret_key', 'jwt_secret', 'username', 'password'];
 
       const appearanceOptions = {};
@@ -390,60 +421,6 @@ export async function handleAdminAPI(request, env, sys) {
           zh: `已删除 ${ids.length} 台服务器`
         }
       }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-    else if (data.action === 'get_stats') {
-      const servers = await getAllServers(env.DB);
-      
-      const latestMetricsMap = await getLatestMetricsForAllServers(env.DB);
-      
-      const now = Date.now();
-      const ONLINE_THRESHOLD = 300000;
-      const stats = {
-        total: servers.length,
-        online: 0,
-        offline: 0,
-        total_cpu: 0,
-        total_ram: 0,
-        total_disk: 0,
-        total_net_in: 0,
-        total_net_out: 0
-      };
-      
-      servers.forEach(s => {
-        const latestMetrics = latestMetricsMap.get(s.id);
-        
-        if (latestMetrics) {
-          const lastUpdated = latestMetrics.timestamp;
-          const cpu = latestMetrics.cpu || 0;
-          const ram = latestMetrics.ram || 0;
-          const disk = latestMetrics.disk || 0;
-          const netInSpeed = latestMetrics.net_in_speed || 0;
-          const netOutSpeed = latestMetrics.net_out_speed || 0;
-          
-          if ((now - lastUpdated) < ONLINE_THRESHOLD) {
-            stats.online++;
-            stats.total_cpu += cpu;
-            stats.total_ram += ram;
-            stats.total_disk += disk;
-            stats.total_net_in += netInSpeed;
-            stats.total_net_out += netOutSpeed;
-          } else {
-            stats.offline++;
-          }
-        } else {
-          stats.offline++;
-        }
-      });
-      
-      if (stats.online > 0) {
-        stats.avg_cpu = (stats.total_cpu / stats.online).toFixed(2);
-        stats.avg_ram = (stats.total_ram / stats.online).toFixed(2);
-        stats.avg_disk = (stats.total_disk / stats.online).toFixed(2);
-      }
-      
-      return new Response(JSON.stringify({ success: true, stats }), {
         headers: { 'Content-Type': 'application/json' }
       });
     }

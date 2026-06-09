@@ -87,8 +87,7 @@ export async function handleServersAPI(request, env, sys) {
       show_expire: sys.show_expire === 'true',
       show_bw: sys.show_bw === 'true',
       show_tf: sys.show_tf === 'true',
-      site_title: sys.site_title || 'Server Monitor',
-      admin_title: sys.admin_title || 'Admin'
+      site_title: sys.site_title || 'Server Monitor'
     }
   };
 

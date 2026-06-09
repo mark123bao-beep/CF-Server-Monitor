@@ -31,7 +31,7 @@
     </div>
 
     <div v-else class="container" id="admin-content">
-      <TerminalHeader :title="settings.admin_title || trans.adminPanel" />
+      <TerminalHeader :title="trans.adminPanel" />
       
       <div class="main-panel">
         <div class="panel-header">
@@ -39,7 +39,7 @@
             <span class="prompt">$</span> {{ trans.sudoStatus }}
           </div>
           <div class="header-actions">
-            <button @click="refreshStats" class="btn">↻ {{ trans.refresh }}</button>
+            <button @click="loadServers" class="btn">↻ {{ trans.refresh }}</button>
             <button @click="logout" class="btn btn-red">🚪 {{ trans.logout }}</button>
           </div>
         </div>
@@ -174,11 +174,6 @@
               <div class="form-group">
                 <label class="form-label">{{ trans.siteTitle }}</label>
                 <input type="text" v-model="settings.site_title" class="form-input" :placeholder="'Cloudflare Server Monitor'">
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">{{ trans.adminTitle }}</label>
-                <input type="text" v-model="settings.admin_title" class="form-input" :placeholder="'Admin Panel'">
               </div>
 
               <div class="form-group">
@@ -620,7 +615,6 @@ const newServerGroup = ref('Default')
 
 const settings = ref({
   site_title: '',
-  admin_title: '',
   custom_bg: '',
   custom_head: '',
   custom_script: '',
@@ -706,7 +700,6 @@ const handleLogin = async () => {
       }
       loadSettings()
       loadServers()
-      refreshStats()
     } else {
       loginError.value = trans.value.errorInvalidUsername
       loginForm.value.password = ''
@@ -743,7 +736,6 @@ const initAdmin = async () => {
     }
     loadSettings()
     loadServers()
-    refreshStats()
   } else {
     await loadTurnstileConfig()
   }
@@ -806,7 +798,6 @@ const loadSettings = async () => {
       const settingsData = data.settings || {}
       settings.value = {
         site_title: settingsData.site_title || '',
-        admin_title: settingsData.admin_title || '',
         custom_bg: settingsData.custom_bg || '',
         custom_head: settingsData.custom_head || '',
         custom_script: settingsData.custom_script || '',
@@ -865,7 +856,6 @@ const saveSettings = async () => {
       action: 'save_settings',
       settings: {
         site_title: settings.value.site_title,
-        admin_title: settings.value.admin_title,
         custom_bg: settings.value.custom_bg,
         custom_head: settings.value.custom_head,
         custom_script: settings.value.custom_script,
@@ -912,6 +902,7 @@ const saveSettings = async () => {
       if (res.ok) {
         const data = await res.json()
         servers.value = data.servers || []
+        stats.value = data.stats || { total: servers.value.length, online: 0, offline: servers.value.length, avg_cpu: 0 }
         
         const serverGroups = [...new Set(servers.value.map(s => s.server_group || trans.value.default))]
         groups.value = serverGroups
@@ -920,18 +911,6 @@ const saveSettings = async () => {
       console.error('[ERROR] Load servers failed:', e)
     }
   }
-
-const refreshStats = async () => {
-  try {
-    const res = await adminApi({ action: 'get_stats' })
-    if (res.ok) {
-      const data = await res.json()
-      stats.value = data.stats || { total: '-', online: 0, offline: 0, avg_cpu: 0 }
-    }
-  } catch (e) {
-    console.error('[ERROR] Refresh stats failed:', e)
-  }
-}
 
 const addServer = async () => {
     const name = newServerName.value.trim()

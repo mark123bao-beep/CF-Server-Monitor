@@ -1,5 +1,5 @@
 import { saveMetricsHistory } from '../database/schema.js';
-import { checkServerExists, clearServerDetailCache } from '../utils/cache.js';
+import { checkServerExists } from '../utils/cache.js';
 import { createErrorResponse, createUnauthorizedResponse, createNotFoundResponse } from '../utils/errors.js';
 
 // 将最新一次上报打包成前端可直接消费的 "当前状态" 对象
@@ -118,5 +118,3 @@ export async function handleWebSocketUpgrade(request, env) {
     });
   }
 }
-
-export { clearServerDetailCache };

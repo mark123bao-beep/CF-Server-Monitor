@@ -199,8 +199,7 @@ const sysConfig = ref({
   show_expire: true,
   show_bw: true,
   show_tf: true,
-  site_title: 'Server Monitor',
-  admin_title: 'Admin'
+  site_title: 'Server Monitor'
 })
 const countryStats = ref({})
 const currentView = ref('card')
@@ -336,8 +335,7 @@ const refreshData = async () => {
       show_expire: data.sysConfig?.show_expire ?? true,
       show_bw: data.sysConfig?.show_bw ?? true,
       show_tf: data.sysConfig?.show_tf ?? true,
-      site_title: data.sysConfig?.site_title || 'Server Monitor',
-      admin_title: data.sysConfig?.admin_title || 'Admin'
+      site_title: data.sysConfig?.site_title || 'Server Monitor'
     }
 
     drawMarkers()

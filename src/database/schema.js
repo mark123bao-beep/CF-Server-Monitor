@@ -3,8 +3,7 @@ import {
   getLatestMetricsCache, 
   setLatestMetricsCache,
   getMetricsHistoryCache,
-  setMetricsHistoryCache,
-  clearMetricsHistoryCache
+  setMetricsHistoryCache
 } from '../utils/cache.js';
 
 let dbInitialized = false;
@@ -46,7 +45,7 @@ export async function initDatabase(db) {
 
     await db.prepare(`
       CREATE TABLE IF NOT EXISTS metrics_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY,
         server_id TEXT NOT NULL,
         timestamp INTEGER DEFAULT 0,
         cpu REAL DEFAULT 0,

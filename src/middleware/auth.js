@@ -168,13 +168,6 @@ export async function validateCredentials(request, env, sys) {
   }
 }
 
-export function authResponse(realmTitle) {
-  return new Response('Unauthorized', {
-    status: 401,
-    headers: { 'WWW-Authenticate': `Bearer realm="${realmTitle}"` }
-  });
-}
-
 export function simpleAuthResponse() {
   return new Response(JSON.stringify({ error: 'Unauthorized', code: 401 }), {
     status: 401,
