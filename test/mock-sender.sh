@@ -64,7 +64,7 @@ while true; do
     DISK_TOTAL=$(generate_int 100 500)
     DISK_USED=$(awk -v total="$DISK_TOTAL" -v pct="$DISK" 'BEGIN{printf "%d", total * pct / 100}')
     
-    LOAD=$(printf "%.2f %.2f %.2f" $(generate_random 0.1 2.0) $(generate_random 0.1 1.8) $(generate_random 0.1 1.5))
+    LOAD_AVG=$(echo "$(generate_random 0.1 2.0) $(generate_random 0.1 1.8) $(generate_random 0.1 1.5)")
     
     BOOT_TIME=$(($(date +%s) - $(generate_int 3600 86400)))000
     
@@ -101,12 +101,15 @@ while true; do
     PING_CM=$(generate_int 30 250)
     PING_BD=$(generate_int 50 300)
     
+    NET_RX_MONTHLY=$(generate_int 100000000 1500000000)
+    NET_TX_MONTHLY=$(generate_int 150000000 750000000)
+    
     EOS=$(escape_json "${OS}")
     EARCH=$(escape_json "${ARCH}")
     ECPU=$(escape_json "${CPU_INFO}")
     
     PAYLOAD=$(cat <<EOF
-{"id":"$SERVER_ID","secret":"$SECRET","metrics":{"cpu":"$CPU","ram":"$RAM","ram_total":"$RAM_TOTAL","ram_used":"$RAM_USED","swap_total":"$SWAP_TOTAL","swap_used":"$SWAP_USED","disk":"$DISK","disk_total":"$DISK_TOTAL","disk_used":"$DISK_USED","load":"$LOAD","boot_time":"$BOOT_TIME","net_rx":"$RX_NOW","net_tx":"$TX_NOW","net_in_speed":"$RX_SPEED","net_out_speed":"$TX_SPEED","os":"$EOS","arch":"$EARCH","cpu_info":"$ECPU","cpu_cores":"$CPU_CORES","processes":"$PROCESSES","tcp_conn":"$TCP_CONN","udp_conn":"$UDP_CONN","ip_v4":"$IPV4","ip_v6":"$IPV6","ping_ct":"$PING_CT","ping_cu":"$PING_CU","ping_cm":"$PING_CM","ping_bd":"$PING_BD"}}
+{"id":"$SERVER_ID","secret":"$SECRET","metrics":{"cpu":"$CPU","ram":"$RAM","ram_total":"$RAM_TOTAL","ram_used":"$RAM_USED","swap_total":"$SWAP_TOTAL","swap_used":"$SWAP_USED","disk":"$DISK","disk_total":"$DISK_TOTAL","disk_used":"$DISK_USED","load_avg":"$LOAD_AVG","boot_time":"$BOOT_TIME","net_rx":"$RX_NOW","net_tx":"$TX_NOW","net_rx_monthly":"$NET_RX_MONTHLY","net_tx_monthly":"$NET_TX_MONTHLY","net_in_speed":"$RX_SPEED","net_out_speed":"$TX_SPEED","os":"$EOS","arch":"$EARCH","cpu_info":"$ECPU","cpu_cores":"$CPU_CORES","processes":"$PROCESSES","tcp_conn":"$TCP_CONN","udp_conn":"$UDP_CONN","ip_v4":"$IPV4","ip_v6":"$IPV6","ping_ct":"$PING_CT","ping_cu":"$PING_CU","ping_cm":"$PING_CM","ping_bd":"$PING_BD"}}
 EOF
 )
     

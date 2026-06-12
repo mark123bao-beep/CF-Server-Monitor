@@ -77,6 +77,8 @@ export async function initDatabase(db) {
         ip_v4 TEXT DEFAULT '0',
         ip_v6 TEXT DEFAULT '0',
         boot_time TEXT DEFAULT '',
+        net_rx_monthly REAL DEFAULT 0,
+        net_tx_monthly REAL DEFAULT 0,
         FOREIGN KEY (server_id) REFERENCES servers(id)
       )
     `).run();
@@ -207,14 +209,14 @@ export async function getMetricsHistory(db, serverId, hours, columns) {
 export async function cleanupOldData(db) {
   try {
     const now = Date.now();
-    const threeDays = 3 * 24 * 60 * 60 * 1000;
+    const cleanupInterval = 1 * 24 * 60 * 60 * 1000;
     
     const stats = {
       expired: 0,
       deleted: 0
     };
     
-    const rawCutoff = now - threeDays;
+    const rawCutoff = now - cleanupInterval;
     const intDeleteResult = await db.prepare(
       `DELETE FROM metrics_history WHERE typeof(timestamp) = 'integer' AND timestamp < ?`
     ).bind(rawCutoff).run();
@@ -256,7 +258,8 @@ export async function saveMetricsHistory(db, serverId, metrics, countryCode = ''
         ping_ct, ping_cu, ping_cm, ping_bd,
         ram_total, ram_used, swap_total, swap_used,
         disk_total, disk_used,
-        cpu_cores, cpu_info, arch, os, country, ip_v4, ip_v6, boot_time
+        cpu_cores, cpu_info, arch, os, country, ip_v4, ip_v6, boot_time,
+        net_rx_monthly, net_tx_monthly
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
@@ -264,7 +267,8 @@ export async function saveMetricsHistory(db, serverId, metrics, countryCode = ''
         ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?
       )
     `).bind(
       serverId,
@@ -272,7 +276,7 @@ export async function saveMetricsHistory(db, serverId, metrics, countryCode = ''
       parseFloat(metrics.cpu) || 0,
       parseFloat(metrics.ram) || 0,
       parseFloat(metrics.disk) || 0,
-      metrics.load || '0',
+      metrics.load || metrics.load_avg || '0 0 0',
       parseFloat(metrics.net_in_speed) || 0,
       parseFloat(metrics.net_out_speed) || 0,
       parseFloat(metrics.net_rx) || 0,
@@ -297,7 +301,9 @@ export async function saveMetricsHistory(db, serverId, metrics, countryCode = ''
       countryCode,
       metrics.ip_v4 || '0',
       metrics.ip_v6 || '0',
-      metrics.boot_time || ''
+      metrics.boot_time || '',
+      parseFloat(metrics.net_rx_monthly) || 0,
+      parseFloat(metrics.net_tx_monthly) || 0
     ).run();
   } catch (e) {
     console.error('保存历史数据失败:', e);

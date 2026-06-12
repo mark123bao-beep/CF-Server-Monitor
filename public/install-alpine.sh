@@ -1,6 +1,6 @@
 #!/bin/sh
 # ==============================================================================
-# V1.0.1
+# V1.1.0
 # CF-Server-Monitor 安装/卸载脚本 (Alpine Linux 兼容版)
 # 支持: Alpine Linux (OpenRC / 裸机 / Docker 容器)
 # Fixes: 1. 独立协程无 wait 阻塞 2. 原子化原子覆盖 3. 兼容 OpenRC/无 init 场景
@@ -8,6 +8,10 @@
 # ==============================================================================
 
 set -eu
+
+# 路径定义（月度流量追踪）
+TRAFFIC_DATA_DIR="/var/lib/cf-probe"
+TRAFFIC_DATA_FILE="${TRAFFIC_DATA_DIR}/traffic.dat"
 
 # 颜色定义（busybox sh 下仅 printf '%b' 可用，所以统一用 printf）
 RED='\033[0;31m'
@@ -153,6 +157,7 @@ create_script() {
     local cu_node=${4:-}
     local cm_node=${5:-}
     local bd_node=${6:-}
+    local reset_day=${7:-1}
     step "注入工业级监控采集探针..."
 
     # 先写占位符内容，再用 sed 替换 PING_TYPE_PLACEHOLDER
@@ -170,6 +175,7 @@ CT_NODE="${6:-}"
 CU_NODE="${7:-}"
 CM_NODE="${8:-}"
 BD_NODE="${9:-}"
+RESET_DAY="${10:-1}"
 
 # 严苛环境下的规范 JSON 字段转义函数
 escape_json() {
@@ -190,6 +196,128 @@ safe_div() {
 
 get_net_bytes() {
     awk 'NR>2{rx+=$2;tx+=$10}END{printf "%.0f %.0f\n",rx,tx}' /proc/net/dev 2>/dev/null || echo "0 0";
+}
+
+# ------------------ 月度流量追踪模块 ------------------
+# 功能：计算当月消耗流量（上行/下行），自动处理服务器重启和跨月重置
+TRAFFIC_DATA_DIR="/var/lib/cf-probe"
+TRAFFIC_DATA_FILE="${TRAFFIC_DATA_DIR}/traffic.dat"
+
+# 获取当月账单周期起始时间戳（UTC+0）
+get_period_start_ts() {
+    local reset_day="$1"
+    local now_ts="$2"
+    local year month day
+    # 使用 UTC 时间获取年月日（兼容 busybox date 和 GNU date）
+    if date -u -d "@${now_ts}" '+%Y' >/dev/null 2>&1; then
+        year=$(date -u -d "@${now_ts}" '+%Y')
+        month=$(date -u -d "@${now_ts}" '+%m')
+        day=$(date -u -d "@${now_ts}" '+%d')
+    else
+        year=$(date -u -r "${now_ts}" '+%Y')
+        month=$(date -u -r "${now_ts}" '+%m')
+        day=$(date -u -r "${now_ts}" '+%d')
+    fi
+    
+    local target_day="$reset_day"
+    # 处理月份最后一天：2月最多29天，4/6/9/11月最多30天
+    case "$month" in
+        02) [ "$target_day" -gt 29 ] && target_day=29 ;;
+        04|06|09|11) [ "$target_day" -gt 30 ] && target_day=30 ;;
+    esac
+    
+    local period_start_ts
+    if [ "$day" -ge "$target_day" ]; then
+        if date -u -d "${year}-${month}-${target_day} 00:00:00" '+%s' >/dev/null 2>&1; then
+            period_start_ts=$(date -u -d "${year}-${month}-${target_day} 00:00:00" '+%s')
+        else
+            period_start_ts=$(date -u -r "${now_ts}" '+%s')
+        fi
+    else
+        local prev_month=$((month - 1))
+        [ "$prev_month" -eq 0 ] && { prev_month=12; year=$((year - 1)); }
+        local prev_month_str=$(printf "%02d" "$prev_month")
+        case "$prev_month" in
+            02) [ "$target_day" -gt 29 ] && target_day=29 ;;
+            04|06|09|11) [ "$target_day" -gt 30 ] && target_day=30 ;;
+        esac
+        if date -u -d "${year}-${prev_month_str}-${target_day} 00:00:00" '+%s' >/dev/null 2>&1; then
+            period_start_ts=$(date -u -d "${year}-${prev_month_str}-${target_day} 00:00:00" '+%s')
+        else
+            period_start_ts=$(date -u -r "${now_ts}" '+%s')
+        fi
+    fi
+    echo "$period_start_ts"
+}
+
+# 计算月度流量（自动持久化）
+calc_monthly_traffic() {
+    local current_rx="$1"
+    local current_tx="$2"
+    local reset_day="${RESET_DAY:-1}"
+    local now_ts
+    now_ts=$(date '+%s')
+    
+    mkdir -p "${TRAFFIC_DATA_DIR}" 2>/dev/null || true
+    
+    # 读取上次保存的数据
+    local saved_rx_prev=0 saved_tx_prev=0 saved_rx_period=0 saved_tx_period=0 saved_last_check=0 saved_period_start=0
+    if [ -f "${TRAFFIC_DATA_FILE}" ]; then
+        local tmp_rx_prev tmp_tx_prev tmp_rx_period tmp_tx_period tmp_last_check tmp_period_start
+        while IFS='=' read -r key value; do
+            case "$key" in
+                RX_PREV) tmp_rx_prev="$value" ;;
+                TX_PREV) tmp_tx_prev="$value" ;;
+                RX_PERIOD) tmp_rx_period="$value" ;;
+                TX_PERIOD) tmp_tx_period="$value" ;;
+                LAST_CHECK) tmp_last_check="$value" ;;
+                PERIOD_START) tmp_period_start="$value" ;;
+            esac
+        done < "${TRAFFIC_DATA_FILE}"
+        saved_rx_prev=${tmp_rx_prev:-0}; saved_tx_prev=${tmp_tx_prev:-0}
+        saved_rx_period=${tmp_rx_period:-0}; saved_tx_period=${tmp_tx_period:-0}
+        saved_last_check=${tmp_last_check:-0}; saved_period_start=${tmp_period_start:-0}
+    fi
+    
+    # 计算当前账单周期起始
+    local period_start_ts
+    period_start_ts=$(get_period_start_ts "$reset_day" "$now_ts")
+    
+    # 检测是否是首次运行
+    local rx_delta=0 tx_delta=0
+    if [ "$saved_last_check" -ne 0 ]; then
+        if [ "$current_rx" -lt "$saved_rx_prev" ] || [ "$current_tx" -lt "$saved_tx_prev" ]; then
+            rx_delta=0; tx_delta=0
+        else
+            rx_delta=$((current_rx - saved_rx_prev))
+            tx_delta=$((current_tx - saved_tx_prev))
+        fi
+        
+        # 判断是否进入新账单周期（跨月）
+        if [ "$period_start_ts" -ne "$saved_period_start" ] && [ "$saved_period_start" -ne 0 ]; then
+            saved_rx_period="$rx_delta"; saved_tx_period="$tx_delta"
+        else
+            saved_rx_period=$((saved_rx_period + rx_delta))
+            saved_tx_period=$((saved_tx_period + tx_delta))
+        fi
+    else
+        saved_rx_period=0
+        saved_tx_period=0
+    fi
+    
+    # 持久化保存
+    cat > "${TRAFFIC_DATA_FILE}.tmp" << EOF
+RX_PREV=${current_rx}
+TX_PREV=${current_tx}
+RX_PERIOD=${saved_rx_period}
+TX_PERIOD=${saved_tx_period}
+LAST_CHECK=${now_ts}
+PERIOD_START=${period_start_ts}
+EOF
+    mv "${TRAFFIC_DATA_FILE}.tmp" "${TRAFFIC_DATA_FILE}" 2>/dev/null || true
+    
+    # 返回当月流量（上行=tx, 下行=rx）
+    echo "$saved_rx_period $saved_tx_period"
 }
 
 get_cpu_stat() {
@@ -363,7 +491,7 @@ while true; do
     CPU_INFO=$(grep -m 1 'model name' /proc/cpuinfo 2>/dev/null | awk -F: '{print $2}' | xargs || echo "")
     [ -z "${CPU_INFO}" ] && CPU_INFO=${ARCH}
     CPU_CORES=$(nproc 2>/dev/null || grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo "1")
-    LOAD=$(cat /proc/loadavg 2>/dev/null | awk '{print $1, $2, $3}' || echo "0 0 0")
+    LOAD_AVG=$(cat /proc/loadavg 2>/dev/null | awk '{print $1, $2, $3}' || echo "0 0 0")
     PROCESSES=$(ps -e 2>/dev/null | wc -l || echo 0)
     TCP_CONN=$(ss -ant 2>/dev/null | grep -c -v State || wc -l < /proc/net/tcp 2>/dev/null || echo 0)
     UDP_CONN=$(ss -anu 2>/dev/null | grep -c -v State || wc -l < /proc/net/udp 2>/dev/null || echo 0)
@@ -371,6 +499,10 @@ while true; do
     NET_STAT=$(get_net_bytes)
     RX_NOW=$(echo "$NET_STAT" | awk '{print $1}'); RX_NOW=${RX_NOW:-0}
     TX_NOW=$(echo "$NET_STAT" | awk '{print $2}'); TX_NOW=${TX_NOW:-0}
+    
+    MONTHLY_TRAFFIC=$(calc_monthly_traffic "$RX_NOW" "$TX_NOW")
+    RX_MONTHLY=$(echo "$MONTHLY_TRAFFIC" | awk '{print $1}')
+    TX_MONTHLY=$(echo "$MONTHLY_TRAFFIC" | awk '{print $2}')
 
     TIME_DELTA=$((LOOP_START_TIME - PREV_LOOP_TIME))
     [ "${TIME_DELTA}" -le 0 ] && TIME_DELTA=${REPORT_INTERVAL}
@@ -399,7 +531,7 @@ while true; do
     ECPU=$(escape_json "${CPU_INFO}")
 
     PAYLOAD=$(cat <<EOF
-{"id":"$SERVER_ID","secret":"$SECRET","metrics":{"cpu":"$CPU","ram":"$RAM","ram_total":"$RAM_TOTAL","ram_used":"$RAM_USED","swap_total":"$SWAP_TOTAL","swap_used":"$SWAP_USED","disk":"$DISK","disk_total":"$DISK_TOTAL","disk_used":"$DISK_USED","load":"$LOAD","boot_time":"$BOOT_TIME","net_rx":"$RX_NOW","net_tx":"$TX_NOW","net_in_speed":"$RX_SPEED","net_out_speed":"$TX_SPEED","os":"$EOS","arch":"$EARCH","cpu_info":"$ECPU","cpu_cores":"$CPU_CORES","processes":"$PROCESSES","tcp_conn":"$TCP_CONN","udp_conn":"$UDP_CONN","ip_v4":"$IPV4","ip_v6":"$IPV6","ping_ct":"$PING_CT","ping_cu":"$PING_CU","ping_cm":"$PING_CM","ping_bd":"$PING_BD"}}
+{"id":"$SERVER_ID","secret":"$SECRET","metrics":{"cpu":"$CPU","ram":"$RAM","ram_total":"$RAM_TOTAL","ram_used":"$RAM_USED","swap_total":"$SWAP_TOTAL","swap_used":"$SWAP_USED","disk":"$DISK","disk_total":"$DISK_TOTAL","disk_used":"$DISK_USED","load_avg":"$LOAD_AVG","boot_time":"$BOOT_TIME","net_rx":"$RX_NOW","net_tx":"$TX_NOW","net_rx_monthly":"$RX_MONTHLY","net_tx_monthly":"$TX_MONTHLY","net_in_speed":"$RX_SPEED","net_out_speed":"$TX_SPEED","os":"$EOS","arch":"$EARCH","cpu_info":"$ECPU","cpu_cores":"$CPU_CORES","processes":"$PROCESSES","tcp_conn":"$TCP_CONN","udp_conn":"$UDP_CONN","ip_v4":"$IPV4","ip_v6":"$IPV6","ping_ct":"$PING_CT","ping_cu":"$PING_CU","ping_cm":"$PING_CM","ping_bd":"$PING_BD"}}
 EOF
 )
     curl -s -o /dev/null -X POST -H "Content-Type: application/json" -d "$PAYLOAD" -m 4 --connect-timeout 2 "$WORKER_URL" 2>/dev/null || true
@@ -439,9 +571,10 @@ create_service() {
     local esc_cu; esc_cu=$(printf '%s' "$cu_node" | sed 's/\\/\\\\/g; s/"/\\"/g')
     local esc_cm; esc_cm=$(printf '%s' "$cm_node" | sed 's/\\/\\\\/g; s/"/\\"/g')
     local esc_bd; esc_bd=$(printf '%s' "$bd_node" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    local esc_reset_day; esc_reset_day=$(printf '%s' "$RESET_DAY" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
     local exec_line
-    exec_line="/bin/bash \"${SCRIPT_FILE}\" \"${esc_id}\" \"${esc_sec}\" \"${esc_url}\" \"${REPORT_INTERVAL}\" \"${esc_ping}\" \"${esc_ct}\" \"${esc_cu}\" \"${esc_cm}\" \"${esc_bd}\""
+    exec_line="/bin/bash \"${SCRIPT_FILE}\" \"${esc_id}\" \"${esc_sec}\" \"${esc_url}\" \"${REPORT_INTERVAL}\" \"${esc_ping}\" \"${esc_ct}\" \"${esc_cu}\" \"${esc_cm}\" \"${esc_bd}\" \"${esc_reset_day}\""
 
     if [ "$INIT_SYSTEM" = "openrc" ]; then
         step "构建 OpenRC init 脚本..."
@@ -451,7 +584,7 @@ create_service() {
 
 description="CF Server Monitor Probe Agent"
 command="/bin/bash"
-command_args="${SCRIPT_FILE} ${esc_id} ${esc_sec} ${esc_url} ${REPORT_INTERVAL} ${esc_ping} ${esc_ct} ${esc_cu} ${esc_cm} ${esc_bd}"
+command_args="${SCRIPT_FILE} ${esc_id} ${esc_sec} ${esc_url} ${REPORT_INTERVAL} ${esc_ping} ${esc_ct} ${esc_cu} ${esc_cm} ${esc_bd} ${esc_reset_day}"
 command_background="yes"
 pidfile="${PID_FILE}"
 output_log="${LOG_FILE}"
@@ -561,6 +694,7 @@ install_probe() {
     CU_NODE=""
     CM_NODE=""
     BD_NODE=""
+    RESET_DAY=""
 
     for arg in "$@"; do
         case "$arg" in
@@ -573,6 +707,7 @@ install_probe() {
             -cu=*) CU_NODE="${arg#-cu=}" ;;
             -cm=*) CM_NODE="${arg#-cm=}" ;;
             -bd=*) BD_NODE="${arg#-bd=}" ;;
+            -reset_day=*) RESET_DAY="${arg#-reset_day=}" ;;
         esac
     done
 
@@ -593,22 +728,25 @@ install_probe() {
         echo "  -cu=HOST       自定义CU测试节点"
         echo "  -cm=HOST       自定义CM测试节点"
         echo "  -bd=HOST       自定义BD测试节点"
+        echo "  -reset_day=N   流量重置日(1-31)，默认1"
         echo ""
         echo "示例:"
         echo "  sh $0 install -id=server123 -secret=abc123 -url=https://worker.example.com"
         echo "  sh $0 install -id=server123 -secret=abc123 -url=https://worker.example.com -interval=30 -ping=tcp"
+        echo "  sh $0 install -id=server123 -secret=abc123 -url=https://worker.example.com -reset_day=15"
         exit 1
     fi
 
     REPORT_INTERVAL=${REPORT_INTERVAL:-60}
     PING_TYPE=${PING_TYPE:-http}
+    RESET_DAY=${RESET_DAY:-1}
 
     print_banner
     check_root
     detect_os
     install_deps
     stop_old_service
-    create_script "$REPORT_INTERVAL" "$PING_TYPE" "$CT_NODE" "$CU_NODE" "$CM_NODE" "$BD_NODE"
+    create_script "$REPORT_INTERVAL" "$PING_TYPE" "$CT_NODE" "$CU_NODE" "$CM_NODE" "$BD_NODE" "$RESET_DAY"
     create_service "$CT_NODE" "$CU_NODE" "$CM_NODE" "$BD_NODE"
     start_service
 
@@ -622,6 +760,7 @@ install_probe() {
     printf  '    ● Worker URL  : %s\n' "${WORKER_URL}"
     printf  '    ● 上报间隔    : %s秒\n' "${REPORT_INTERVAL}"
     printf  '    ● 探测类型    : %s\n' "${PING_TYPE}"
+    printf  '    ● 流量重置日  : %s号\n' "${RESET_DAY}"
     [ -n "${CT_NODE}" ] && printf  '    ● CT节点      : %s\n' "${CT_NODE}"
     [ -n "${CU_NODE}" ] && printf  '    ● CU节点      : %s\n' "${CU_NODE}"
     [ -n "${CM_NODE}" ] && printf  '    ● CM节点      : %s\n' "${CM_NODE}"
@@ -665,6 +804,9 @@ uninstall_probe() {
 
     step "抹除共享内存高速缓存区..."
     rm -f /dev/shm/.cf_ipv4 /dev/shm/.cf_ipv6 /dev/shm/.cf_ping_* 2>/dev/null || true
+
+    step "抹除流量追踪数据..."
+    rm -rf /var/lib/${SERVICE_NAME}
 
     step "清理日志与 PID 文件..."
     rm -f "${PID_FILE}" "${LOG_FILE}" 2>/dev/null || true

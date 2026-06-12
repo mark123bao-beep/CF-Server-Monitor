@@ -421,7 +421,7 @@
 
           <div class="form-group">
             <label class="form-label">{{ trans.price }}</label>
-            <input type="text" name="edit_price" autocomplete="off" v-model="editForm.price" class="form-input" placeholder="e.g. $40/year">
+            <input type="text" name="edit_price" autocomplete="off" v-model="editForm.price" class="form-input" placeholder="e.g. $40/Y">
           </div>
 
           <div class="form-group">
@@ -436,7 +436,7 @@
 
           <div class="form-group">
             <label class="form-label">{{ trans.trafficLimit }}</label>
-            <input type="text" name="edit_traffic_limit" autocomplete="off" v-model="editForm.traffic_limit" class="form-input" placeholder="e.g. 1TB/month">
+            <input type="text" name="edit_traffic_limit" autocomplete="off" v-model="editForm.traffic_limit" class="form-input" placeholder="e.g. 1TB">
           </div>
 
           <div class="form-group">
@@ -550,6 +550,14 @@
               <label class="form-label">{{ trans.customBd }}</label>
               <input type="text" name="custom_bd" autocomplete="off" v-model="customBd" class="form-input" placeholder="lf3-ips.zstaticcdn.com">
             </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">{{ trans.trafficResetDay }}</label>
+            <input type="number" name="reset_day" autocomplete="off" v-model="resetDay" min="1" max="31" class="form-input" placeholder="1" style="width: 100px;">
+            <p class="text-muted text-sm mt-2">
+              <span class="warning-icon">[i]</span> {{ trans.trafficResetDayTip }}
+            </p>
           </div>
 
           <div class="form-group">
@@ -734,6 +742,7 @@ const customCt = ref('')
 const customCu = ref('')
 const customCm = ref('')
 const customBd = ref('')
+const resetDay = ref(1)
 const copiedCmd = ref(false)
 
 const handleLogin = async () => {
@@ -1010,6 +1019,7 @@ const copyCmd = (serverId) => {
   customCu.value = settings.value.custom_cu
   customCm.value = settings.value.custom_cm
   customBd.value = settings.value.custom_bd
+  resetDay.value = 1
   copiedCmd.value = false
   showCopyModal.value = true
 }
@@ -1021,7 +1031,7 @@ const getCustomInstallCommand = () => {
   }
   const shell = targetOs.value === 'alpine' ? 'sh' : 'bash'
   const script = targetOs.value === 'alpine' ? 'install-alpine.sh' : 'install.sh'
-  let cmd = `curl -sL ${HOST}/${script} | ${shell} -s install -id=${copyServerId.value} -secret='${apiSecret.value}' -url=${HOST}/update -interval=${reportInterval.value} -ping=${pingMode.value}`
+  let cmd = `curl -sL ${HOST}/${script} | ${shell} -s install -id=${copyServerId.value} -secret='${apiSecret.value}' -url=${HOST}/update -interval=${reportInterval.value} -ping=${pingMode.value} -reset_day=${resetDay.value || 1}`
   if (customCt.value) cmd += ` -ct=${customCt.value}`
   if (customCu.value) cmd += ` -cu=${customCu.value}`
   if (customCm.value) cmd += ` -cm=${customCm.value}`

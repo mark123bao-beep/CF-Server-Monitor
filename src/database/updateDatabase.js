@@ -3,6 +3,9 @@ export async function updateDatabase(db) {
   const results = [];
   
   try {
+    const migrateLoad = await migrateLoadToLoadAvg(db);
+    results.push({ name: 'metrics_history load -> load_avg 迁移', ...migrateLoad });
+    
     const serversCols = await addServerColumns(db);
     results.push({ name: 'servers 表列更新', ...serversCols });
     
@@ -36,6 +39,36 @@ export async function updateDatabase(db) {
       error: e.message,
       results
     };
+  }
+}
+
+async function migrateLoadToLoadAvg(db) {
+  try {
+    const { results: columns } = await db.prepare(`PRAGMA table_info(metrics_history)`).all();
+    const existingCols = columns.map(c => c.name);
+    
+    if (!existingCols.includes('load')) {
+      return { success: true, migrated: 0, message: '无需迁移（没有旧的 load 字段）' };
+    }
+    
+    let migrated = 0;
+    
+    if (!existingCols.includes('load_avg')) {
+      await db.prepare(`ALTER TABLE metrics_history ADD COLUMN load_avg TEXT DEFAULT '0'`).run();
+    }
+    
+    const { meta: updateResult } = await db.prepare(
+      `UPDATE metrics_history SET load_avg = load WHERE load IS NOT NULL AND load_avg = '0'`
+    ).run();
+    migrated = updateResult.changes;
+    
+    await db.prepare(`ALTER TABLE metrics_history DROP COLUMN load`).run();
+    console.log(`✅ 已迁移 ${migrated} 条记录的 load -> load_avg`);
+    
+    return { success: true, migrated, message: `已迁移 ${migrated} 条记录并删除旧字段` };
+  } catch (e) {
+    console.error('迁移 load -> load_avg 失败:', e);
+    return { success: false, error: e.message };
   }
 }
 
@@ -102,7 +135,9 @@ async function addHistoryColumns(db) {
       country: "TEXT DEFAULT ''",
       ip_v4: "TEXT DEFAULT '0'",
       ip_v6: "TEXT DEFAULT '0'",
-      boot_time: "TEXT DEFAULT ''"
+      boot_time: "TEXT DEFAULT ''",
+      net_rx_monthly: "REAL DEFAULT 0",
+      net_tx_monthly: "REAL DEFAULT 0"
     };
     
     let added = 0;
@@ -181,6 +216,8 @@ async function optimizeMetricsHistoryRowid(db) {
         ip_v4 TEXT DEFAULT '0',
         ip_v6 TEXT DEFAULT '0',
         boot_time TEXT DEFAULT '',
+        net_rx_monthly REAL DEFAULT 0,
+        net_tx_monthly REAL DEFAULT 0,
         FOREIGN KEY (server_id) REFERENCES servers(id)
       )
     `).run();
@@ -193,7 +230,8 @@ async function optimizeMetricsHistoryRowid(db) {
         ping_ct, ping_cu, ping_cm, ping_bd,
         ram_total, ram_used, swap_total, swap_used,
         disk_total, disk_used,
-        cpu_cores, cpu_info, arch, os, country, ip_v4, ip_v6, boot_time
+        cpu_cores, cpu_info, arch, os, country, ip_v4, ip_v6, boot_time,
+        net_rx_monthly, net_tx_monthly
       )
       SELECT
         id, server_id, timestamp, cpu, ram, disk, load_avg,
@@ -202,7 +240,8 @@ async function optimizeMetricsHistoryRowid(db) {
         ping_ct, ping_cu, ping_cm, ping_bd,
         ram_total, ram_used, swap_total, swap_used,
         disk_total, disk_used,
-        cpu_cores, cpu_info, arch, os, country, ip_v4, ip_v6, boot_time
+        cpu_cores, cpu_info, arch, os, country, ip_v4, ip_v6, boot_time,
+        COALESCE(net_rx_monthly, 0), COALESCE(net_tx_monthly, 0)
       FROM metrics_history
     `).run();
 

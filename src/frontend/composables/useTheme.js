@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 const STORAGE_KEY = 'theme_preference'
 const AUTO_MODE_HOUR_START = 6
 const AUTO_MODE_HOUR_END = 18
+const themeChangeCallbacks = []
 
 const currentTheme = ref('auto')
 
@@ -20,6 +21,7 @@ const applyTheme = (theme) => {
   if (resolved !== 'dark') {
     document.body.classList.add(resolved)
   }
+  themeChangeCallbacks.forEach(cb => cb(resolved))
 }
 
 export const useTheme = () => {
@@ -47,6 +49,10 @@ export const useTheme = () => {
     applyTheme(saved)
   }
 
+  const onThemeChange = (callback) => {
+    themeChangeCallbacks.push(callback)
+  }
+
   onMounted(() => {
     initTheme()
   })
@@ -57,7 +63,8 @@ export const useTheme = () => {
     getPreferredTheme,
     applyTheme,
     toggleTheme,
-    initTheme
+    initTheme,
+    onThemeChange
   }
 }
 

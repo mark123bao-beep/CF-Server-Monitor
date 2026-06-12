@@ -38,12 +38,10 @@ const translations = reactive({
     architecture: 'Architecture',
     os: 'OS',
     cpuModel: 'CPU Model',
-    cpuCores: 'CPU Cores',
     cpuInfo: 'CPU Info',
     loadAvg: 'Load Average',
     bootTime: 'Boot Time',
-    totalRam: 'Total RAM',
-    totalDisk: 'Total Disk',
+    totalDiskRam: 'Total Disk / RAM',
     trafficIn: 'Traffic In',
     trafficOut: 'Traffic Out',
     traffic: 'Traffic',
@@ -95,6 +93,8 @@ const translations = reactive({
     price: 'PRICE',
     expire: 'EXPIRE',
     expireDays: 'd',
+    day: 'day',
+    days: 'days',
     expired: 'EXPIRED',
     bandwidth: 'BANDWIDTH',
     traffic: 'TRAFFIC',
@@ -199,7 +199,11 @@ const translations = reactive({
     turnstileTip: 'Cloudflare Turnstile provides bot protection. Get keys from Cloudflare Dashboard.',
     jwtSettings: 'JWT Settings',
     jwtSecret: 'JWT Secret',
-    jwtSecretPlaceholder: 'At least 32 characters'
+    jwtSecretPlaceholder: 'At least 32 characters',
+    monthlyTraffic: 'Monthly Traffic',
+    monthlyTrafficLimit: 'Traffic Limit',
+    trafficResetDay: 'Traffic Reset Day',
+    trafficResetDayTip: 'Day of month to reset traffic counter (1-31). Automatically adjusts for months with fewer days.'
   },
   zh: {
     theme: '主题',
@@ -238,12 +242,10 @@ const translations = reactive({
     architecture: '架构',
     os: '操作系统',
     cpuModel: 'CPU 型号',
-    cpuCores: 'CPU 核心',
     cpuInfo: 'CPU 信息',
     loadAvg: '负载均值',
     bootTime: '启动时间',
-    totalRam: '总内存',
-    totalDisk: '总磁盘',
+    totalDiskRam: '总磁盘 / 内存',
     trafficIn: '入站流量',
     trafficOut: '出站流量',
     traffic: '流量',
@@ -295,6 +297,8 @@ const translations = reactive({
     price: '价格',
     expire: '到期',
     expireDays: '天',
+    day: '天',
+    days: '天',
     expired: '已到期',
     bandwidth: '带宽',
     traffic: '流量',
@@ -399,7 +403,11 @@ const translations = reactive({
     turnstileTip: 'Cloudflare Turnstile 提供机器人保护。从 Cloudflare 控制台获取密钥。',
     jwtSettings: 'JWT 设置',
     jwtSecret: 'JWT 密钥',
-    jwtSecretPlaceholder: '至少32个字符'
+    jwtSecretPlaceholder: '至少32个字符',
+    monthlyTraffic: '月度流量',
+    monthlyTrafficLimit: '月度流量限制',
+    trafficResetDay: '流量重置日',
+    trafficResetDayTip: '每月重置流量计数器的日期（1-31）。对于天数不足的月份会自动调整。'
   }
 })
 

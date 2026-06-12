@@ -12,7 +12,7 @@ body.light {
   --border-active: #b8b8a8;
   --text-primary: #2c2c2c;
   --text-secondary: #5c5c5c;
-  --text-muted: #8c8c8c;
+  --text-muted: rgba(10, 14, 20, 0.8);
   --accent-green: #1a7f5a;
   --accent-blue: #2563eb;
   --accent-purple: #7c3aed;

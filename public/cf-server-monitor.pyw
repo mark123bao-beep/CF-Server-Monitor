@@ -468,7 +468,7 @@ def collect_metrics(psutil, previous_net):
         "disk": str(int((disk.used / disk.total) * 100)) if disk.total else "0",
         "disk_total": str(int(disk.total / 1024 / 1024)),
         "disk_used": str(int(disk.used / 1024 / 1024)),
-        "load": get_load_text(cpu_percent),
+        "load_avg": get_load_text(cpu_percent),
         "boot_time": get_boot_time_ms(psutil),
         "net_rx": str(rx_now),
         "net_tx": str(tx_now),
@@ -959,7 +959,7 @@ class ProbeGUI:
         self.arch_label.config(text=f"系统架构：{metrics.get('arch', '-')}")
         self.cpu_model_label.config(text=f"CPU型号：{metrics.get('cpu_info', '-')}")
         self.cpu_core_label.config(text=f"CPU核心：{metrics.get('cpu_cores', '-')}")
-        self.load_label.config(text=f"负载均值：{metrics.get('load', '-')}")
+        self.load_label.config(text=f"负载均值：{metrics.get('load_avg', '-')}")
         self.cpu_label.config(text=f"CPU占用：{metrics.get('cpu', '-')}%")
         self.ram_label.config(text=f"内存占用：{metrics.get('ram', '-')}%")
         self.ram_total_label.config(text=f"总内存：{mb_to_gb_text(metrics.get('ram_total', '0'))}")

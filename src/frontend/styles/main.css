@@ -25,7 +25,7 @@
     /* Text Colors */
     --text-primary: #d3dae3;
     --text-secondary: #8999af;
-    --text-muted: #5c6d82;
+    --text-muted: rgba(211, 218, 227, 0.8);
 
     /* Accent Colors */
     --accent-green: #00d4aa;
@@ -938,14 +938,6 @@ body::before {
     gap: 8px;
 }
 
-.os-label {
-    color: var(--text-secondary);
-}
-
-.update-time {
-    color: var(--text-muted);
-}
-
 .group-tag,
 .price-tag {
     display: inline-block;
@@ -965,11 +957,6 @@ body::before {
     background: rgba(255, 184, 112, 0.1);
     color: var(--accent-yellow);
     border: 1px solid rgba(255, 184, 112, 0.2);
-}
-
-.date-text,
-.spec-text {
-    color: var(--text-secondary);
 }
 
 /* --------------------------------------------------------------------------
@@ -1207,7 +1194,6 @@ body::before {
     align-items: center;
     gap: 4px;
     font-weight: 600;
-    color: var(--text-muted);
     margin-bottom: 6px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -1560,7 +1546,7 @@ body::before {
 }
 
 .chart-subtitle {
-    color: var(--text-muted);
+    color: var(--text-primary);
     margin-top: 2px;
 }
 

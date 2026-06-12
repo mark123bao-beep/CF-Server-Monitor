@@ -46,36 +46,32 @@
           <span class="sysinfo-value" :class="{ 'expired': isExpired }">{{ expireDaysText }}</span>
         </div>
         <div class="sysinfo-item">
-          <span class="sysinfo-label">🏗 {{ trans.architecture }}</span>
-          <span class="sysinfo-value">{{ server.arch || 'N/A' }}</span>
-        </div>
-        <div class="sysinfo-item">
-          <span class="sysinfo-label">💻 {{ trans.os }}</span>
-          <span class="sysinfo-value sysinfo-small">{{ server.os || 'N/A' }}</span>
+          <span class="sysinfo-label">💻 {{ trans.os }} / {{ trans.architecture }}</span>
+          <span class="sysinfo-value sysinfo-small">{{ server.os || 'N/A' }} / {{ server.arch || 'N/A' }}</span>
         </div>
         <div class="sysinfo-item">
           <span class="sysinfo-label">🔧 {{ trans.cpuInfo }}</span>
-          <span class="sysinfo-value sysinfo-small">{{ server.cpu_info || 'N/A' }}</span>
+          <span class="sysinfo-value sysinfo-small">{{ server.cpu_info || 'N/A' }} x {{ server.cpu_cores || 'N/A' }}</span>
         </div>
         <div class="sysinfo-item">
-          <span class="sysinfo-label">⚙️ {{ trans.cpuCores }}</span>
-          <span class="sysinfo-value">{{ server.cpu_cores || 'N/A' }}</span>
-        </div>
-        <div class="sysinfo-item">
-          <span class="sysinfo-label">💾 {{ trans.totalRam }}</span>
-          <span class="sysinfo-value">{{ formatBytes(server.ram_total*1024*1024) }}</span>
-        </div>
-        <div class="sysinfo-item">
-          <span class="sysinfo-label">💿 {{ trans.totalDisk }}</span>
-          <span class="sysinfo-value">{{ formatBytes(server.disk_total*1024*1024) }}</span>
+          <span class="sysinfo-label">💾 {{ trans.totalDiskRam }}</span>
+          <span class="sysinfo-value">{{ formatBytes(server.disk_total*1024*1024) }} / {{ formatBytes(server.ram_total*1024*1024) }}</span>
         </div>
         <div class="sysinfo-item">
           <span class="sysinfo-label">📊 {{ trans.loadAvg }}</span>
-          <span class="sysinfo-value highlight">{{ server.load_avg || '0.00' }}</span>
+          <span class="sysinfo-value highlight">{{ server.load_avg || '0.00 0.00 0.00' }}</span>
         </div>
         <div class="sysinfo-item">
-          <span class="sysinfo-label">🌐 {{ trans.traffic }}</span>
-          <span class="sysinfo-value sysinfo-small">🔽 {{ formatBytes(server.net_rx) }} / 🔼 {{ formatBytes(server.net_tx) }}</span>
+          <span class="sysinfo-label">🌐 {{ trans.totalTraffic }}</span>
+          <span class="sysinfo-value sysinfo-small">↓ {{ formatBytes(server.net_rx) }} / ↑ {{ formatBytes(server.net_tx) }}</span>
+        </div>
+        <div class="sysinfo-item" v-if="server.net_rx_monthly">
+          <span class="sysinfo-label">📊 {{ trans.monthlyTraffic }}</span>
+          <span class="sysinfo-value sysinfo-small">↓ {{ formatBytes(server.net_rx_monthly) }} / ↑ {{ formatBytes(server.net_tx_monthly) }}</span>
+        </div>
+        <div class="sysinfo-item" v-if="server.net_rx_monthly">
+          <span class="sysinfo-label">📦 {{ trans.monthlyTrafficLimit }}</span>
+          <span class="sysinfo-value sysinfo-small">{{ formatBytes(server.net_rx_monthly + server.net_tx_monthly) }} / {{ server.traffic_limit ? server.traffic_limit : 'Unlimited' }}</span>
         </div>
         <div class="sysinfo-item">
           <span class="sysinfo-label">🕐 {{ trans.bootTime }}</span>
@@ -243,9 +239,9 @@ import Footer from '../components/Footer.vue'
 import { fetchServerDetail, fetchAllHistory, formatBytes, fetchConfig, isAdminLoggedIn, createLiveSocket } from '../utils/api.js'
 import Chart from 'chart.js/auto'
 import 'chartjs-adapter-date-fns'
-import { t, currentLang } from '../utils/i18n'
-import { translations } from '../utils/i18n'
+import { currentLang, translations } from '../utils/i18n'
 import { TIME, CHART, GAP_BREAK } from '../utils/constants'
+import useTheme from '../composables/useTheme'
 
 const route = useRoute()
 
@@ -304,7 +300,7 @@ const expireDaysText = computed(() => {
   if (isNaN(expTime)) return ''
   const diff = expTime - Date.now()
   const days = Math.ceil(diff / (1000 * 3600 * 24))
-  return days > 0 ? `${days}${trans.value.expireDays}` : trans.value.expired
+  return days > 0 ? `${days}${days === 1 ? trans.value.day : trans.value.days}` : trans.value.expired
 })
 
 const cpuChartRef = ref(null)
@@ -377,7 +373,7 @@ const formatUptime = (bootTime) => {
   const minutesStr = String(minutes).padStart(2, '0')
   
   if (days > 0) {
-    return `${days} day${days > 1 ? 's' : ''}, ${hoursStr}:${minutesStr}`
+    return `${days}${days === 1 ? trans.value.day : trans.value.days}, ${hoursStr}:${minutesStr}`
   } else {
     return `${hoursStr}:${minutesStr}`
   }
@@ -399,6 +395,9 @@ const formatBootTime = (bootTime) => {
 
 const initCharts = () => {
   safeDestroyCharts()
+
+  const isLight = document.body.classList.contains('light')
+  const axisLabelColor = isLight ? '#2c2c2c' : '#d3dae3'
 
   Chart.defaults.font.family = "'JetBrains Mono', 'Courier New', monospace"
   Chart.defaults.font.size = 10
@@ -427,7 +426,7 @@ const initCharts = () => {
           padding: 12,
           font: { size: 10, family: "'JetBrains Mono', monospace" },
           usePointStyle: true,
-          color: '#8999af'
+          color: axisLabelColor
         }
       },
       tooltip: {
@@ -469,9 +468,15 @@ const initCharts = () => {
           displayFormats: { minute: 'HH:mm', hour: 'MM-dd HH:mm' },
           tooltipFormat: 'yyyy-MM-dd HH:mm:ss'
         },
+        title: {
+          display: true,
+          text: 'Time',
+          color: axisLabelColor,
+          font: { size: 10, family: "'JetBrains Mono', monospace" }
+        },
         ticks: {
           maxTicksLimit: CHART.MAX_TICKS,
-          color: '#5c6d82',
+          color: axisLabelColor,
           font: { size: 9, family: "'JetBrains Mono', monospace" },
           maxRotation: 0,
           padding: 8
@@ -483,12 +488,12 @@ const initCharts = () => {
         title: {
           display: !!yAxisLabel,
           text: yAxisLabel,
-          color: '#5c6d82',
+          color: axisLabelColor,
           font: { size: 10, family: "'JetBrains Mono', monospace" }
         },
         grid: { color: 'rgba(30, 42, 58, 0.5)', drawBorder: false, tickLength: 0 },
         ticks: {
-          color: '#5c6d82',
+          color: axisLabelColor,
           font: { size: 9, family: "'JetBrains Mono', monospace" },
           padding: 8,
           callback: function(value) { return value + unit; }
@@ -592,6 +597,34 @@ const initCharts = () => {
       options: createChartOptions('', true, 'Load')
     })
   }
+}
+
+const updateChartsTheme = (theme) => {
+  const axisLabelColor = theme === 'light' ? 'rgba(10, 14, 20, 0.8)' : 'rgba(211, 218, 227, 0.8)'
+
+  Object.values(charts).forEach(chart => {
+    if (!chart) return
+
+    if (chart.options.plugins.legend.labels) {
+      chart.options.plugins.legend.labels.color = axisLabelColor
+    }
+
+    if (chart.options.scales.x) {
+      if (chart.options.scales.x.title) {
+        chart.options.scales.x.title.color = axisLabelColor
+      }
+      chart.options.scales.x.ticks.color = axisLabelColor
+    }
+
+    if (chart.options.scales.y) {
+      if (chart.options.scales.y.title) {
+        chart.options.scales.y.title.color = axisLabelColor
+      }
+      chart.options.scales.y.ticks.color = axisLabelColor
+    }
+
+    chart.update('none')
+  })
 }
 
 const getMaxGapMs = () => {
@@ -824,6 +857,8 @@ const appendDataToChart = (chart, datasetIndex, timestamp, value, isPing = false
   chart.update('none')
 }
 
+const STATIC_FIELDS = ['id', 'name', 'country', 'arch', 'os', 'cpu_info', 'cpu_cores', 'ram_total', 'disk_total', 'expire_date', 'server_group', 'traffic_limit', 'net_rx_monthly', 'net_tx_monthly']
+
 const fetchCurrentStatus = async (incomingData) => {
   try {
     let data = incomingData
@@ -833,7 +868,18 @@ const fetchCurrentStatus = async (incomingData) => {
     }
     if (!data || !data.last_updated) return
 
-    server.value = { ...server.value, ...data }
+    if (incomingData) {
+      const newServer = { ...server.value }
+      for (const key of Object.keys(data)) {
+        if (STATIC_FIELDS.includes(key)) {
+          continue
+        }
+        newServer[key] = data[key]
+      }
+      server.value = newServer
+    } else {
+      server.value = data
+    }
 
     const dataTimestamp = new Date(data.last_updated).getTime()
     appendDataToChart(charts.cpu, 0, dataTimestamp, data.cpu)
@@ -925,9 +971,12 @@ const initChartsOnMount = async () => {
 
 const init = async () => {
   await initChartsOnMount()
-  
+
   fetchCurrentStatus()
   loadAllHistory(currentHours.value)
+
+  const { onThemeChange } = useTheme()
+  onThemeChange(updateChartsTheme)
 
   liveSocket = createLiveSocket(String(serverId), {
     onUpdate: ({ serverId: sid, data }) => {

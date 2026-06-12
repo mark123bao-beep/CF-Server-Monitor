@@ -55,6 +55,11 @@
         <span class="net-down">▼ {{ totalRx }}</span>
         <span class="net-up">▲ {{ totalTx }}</span>
       </div>
+      <div class="stat-row" v-if="sysConfig.show_tf && server.net_rx_monthly">
+        <span class="stat-key">MTRF</span>
+        <span class="net-down">▼ {{ monthlyRx }}</span>
+        <span class="net-up">▲ {{ monthlyTx }}</span>
+      </div>
     </div>
     <div class="ping-panel">
       <div class="ping-item">
@@ -122,6 +127,8 @@ const netInSpeed = computed(() => formatBytes(props.server.net_in_speed))
 const netOutSpeed = computed(() => formatBytes(props.server.net_out_speed))
 const totalRx = computed(() => formatBytes(props.server.net_rx))
 const totalTx = computed(() => formatBytes(props.server.net_tx))
+const monthlyRx = computed(() => formatBytes(props.server.net_rx_monthly))
+const monthlyTx = computed(() => formatBytes(props.server.net_tx_monthly))
 
 const isExpired = computed(() => {
   const expTime = new Date(props.server.expire_date).getTime()

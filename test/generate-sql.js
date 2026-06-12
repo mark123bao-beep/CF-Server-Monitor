@@ -11,8 +11,8 @@ function generateMetrics(baseTimestamp, serverIdx, hourOffset) {
   const timeFactor = 1 - 0.3 * Math.cos((baseHour - 9) * Math.PI / 12);
   
   const baselines = [
-    { cpu: 35, ram: 45, ping: 80, load: 1.2 },
-    { cpu: 25, ram: 35, ping: 35, load: 0.8 }
+    { cpu: 35, ram: 45, ping: 80, load_avg: 1.2 },
+    { cpu: 25, ram: 35, ping: 35, load_avg: 0.8 }
   ];
   
   const baseline = baselines[serverIdx];
@@ -35,9 +35,11 @@ function generateMetrics(baseTimestamp, serverIdx, hourOffset) {
     disk: (45 + (Math.random() - 0.5) * 5).toFixed(0),
     disk_total: (serverIdx === 0 ? 200 : 100).toString(),
     disk_used: '90',
-    load: `${(baseline.load + (Math.random() - 0.5) * 0.8).toFixed(2)} ${(baseline.load + (Math.random() - 0.5) * 0.6).toFixed(2)} ${(baseline.load + (Math.random() - 0.5) * 0.4).toFixed(2)}`,
+    load_avg: `${(baseline.load_avg + (Math.random() - 0.5) * 0.8).toFixed(2)} ${(baseline.load_avg + (Math.random() - 0.5) * 0.6).toFixed(2)} ${(baseline.load_avg + (Math.random() - 0.5) * 0.4).toFixed(2)}`,
     net_rx: Math.floor(Math.random() * 10000 + 5000).toString(),
     net_tx: Math.floor(Math.random() * 5000 + 2500).toString(),
+    net_rx_monthly: Math.floor(Math.random() * 1000000000 + 500000000).toString(),
+    net_tx_monthly: Math.floor(Math.random() * 500000000 + 250000000).toString(),
     net_in_speed: Math.floor(Math.random() * 80 + 20).toString(),
     net_out_speed: Math.floor(Math.random() * 40 + 10).toString(),
     processes: (100 + Math.floor(Math.random() * 50)).toString(),
@@ -156,10 +158,11 @@ for (let s = 0; s < servers.length; s++) {
       ping_ct, ping_cu, ping_cm, ping_bd,
       ram_total, ram_used, swap_total, swap_used,
       disk_total, disk_used,
-      cpu_cores, cpu_info, arch, os, country, ip_v4, ip_v6, boot_time
+      cpu_cores, cpu_info, arch, os, country, ip_v4, ip_v6, boot_time,
+      net_rx_monthly, net_tx_monthly
     ) VALUES (
       '${server.id}', ${ts}, 
-      ${parseFloat(metrics.cpu)}, ${parseFloat(metrics.ram)}, ${parseFloat(metrics.disk)}, '${metrics.load}',
+      ${parseFloat(metrics.cpu)}, ${parseFloat(metrics.ram)}, ${parseFloat(metrics.disk)}, '${metrics.load_avg}',
       ${parseFloat(metrics.net_in_speed)}, ${parseFloat(metrics.net_out_speed)},
       ${parseFloat(metrics.net_rx)}, ${parseFloat(metrics.net_tx)},
       ${parseInt(metrics.processes)}, ${parseInt(metrics.tcp_conn)}, ${parseInt(metrics.udp_conn)},
@@ -167,7 +170,8 @@ for (let s = 0; s < servers.length; s++) {
       ${parseFloat(metrics.ram_total)}, ${parseFloat(metrics.ram_used)},
       ${parseFloat(metrics.swap_total)}, ${parseFloat(metrics.swap_used)},
       ${parseFloat(metrics.disk_total)}, ${parseFloat(metrics.disk_used)},
-      ${parseInt(metrics.cpu_cores)}, '${metrics.cpu_info}', '${metrics.arch}', '${metrics.os}', '${metrics.country}', '${metrics.ip_v4}', '${metrics.ip_v6}', '${metrics.boot_time}'
+      ${parseInt(metrics.cpu_cores)}, '${metrics.cpu_info}', '${metrics.arch}', '${metrics.os}', '${metrics.country}', '${metrics.ip_v4}', '${metrics.ip_v6}', '${metrics.boot_time}',
+      ${parseFloat(metrics.net_rx_monthly)}, ${parseFloat(metrics.net_tx_monthly)}
     );\n`;
     
     if (ts > latestTs) {

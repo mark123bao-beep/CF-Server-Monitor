@@ -4,11 +4,13 @@ export function mergeMetricsIntoServer(server, metrics) {
   server.cpu = metrics.cpu || 0;
   server.ram = metrics.ram || 0;
   server.disk = metrics.disk || 0;
-  server.load_avg = metrics.load_avg || '0';
+  server.load_avg = metrics.load ?? metrics.load_avg ?? '0';
   server.net_in_speed = metrics.net_in_speed || 0;
   server.net_out_speed = metrics.net_out_speed || 0;
   server.net_rx = metrics.net_rx || 0;
   server.net_tx = metrics.net_tx || 0;
+  server.net_rx_monthly = metrics.net_rx_monthly || 0;
+  server.net_tx_monthly = metrics.net_tx_monthly || 0;
   server.processes = metrics.processes || 0;
   server.tcp_conn = metrics.tcp_conn || 0;
   server.udp_conn = metrics.udp_conn || 0;
