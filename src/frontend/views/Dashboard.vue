@@ -139,6 +139,7 @@
               <th>{{ trans.ram }}</th>
               <th>{{ trans.disk }}</th>
               <th>{{ trans.use }}</th>
+              <th class="table-col-conn">TCP/UDP</th>
               <th width="95">{{ trans.dl }}</th>
               <th width="95">{{ trans.ul }}</th>
               <th width="70">{{ trans.update }}</th>
@@ -146,13 +147,13 @@
           </thead>
           <tbody>
             <tr v-if="isLoading">
-              <td class="table-empty-state">
+              <td class="table-empty-state" colspan="12">
                 <div class="loading-spinner-small"></div>
                 <span>$ {{ trans.loading }}</span>
               </td>
             </tr>
             <tr v-else-if="filteredServers.length === 0">
-              <td class="table-empty-state">[*] {{ trans.noData }}</td>
+              <td class="table-empty-state" colspan="12">[*] {{ trans.noData }}</td>
             </tr>
             <tr 
               v-for="server in filteredServers" 
@@ -164,22 +165,25 @@
               <td class="table-center-cell">
                 <div class="status-indicator table-status-indicator-inline" :style="{ background: getStatusColor(server) }"></div>
               </td>
-              <td><b>{{ server.name }}</b></td>
+              <td><b class="table-server-name">{{ server.name }}</b></td>
               <td>
                 <span v-if="server.region && server.region !== 'xx'" class="country-os-icons">
                   <img :src="getPublicAssetUrl('flags/' + getFlagRegionCode(server.region) + '.svg')" :alt="server.region" class="flag-img">
-                  <OsIcon :os="server.os" />
                 </span>
                 <span v-else class="country-os-icons">
                   <span class="flag-fallback">🏳️</span>
-                  <OsIcon :os="server.os" />
                 </span>
                 {{ (server.region || 'XX').toUpperCase() }}
               </td>
-              <td><span class="os-label">{{ server.os || 'N/A' }} / {{ server.arch || 'N/A' }} </span></td>
+              <td>
+                <span class="table-system-info">
+                  <OsIcon :os="server.os" />
+                  <span class="os-label">{{ formatSystemOs(server.os) }} / {{ server.arch || 'N/A' }} </span>
+                </span>
+              </td>
               <td>
                 <div class="table-stat">
-                  <div class="stat-bar-container stat-bar-small">
+                  <div class="stat-bar-container stat-bar-small table-usage-bar">
                   <div class="stat-bar-fill" :style="{ width: (parseFloat(server.cpu) || 0) + '%', background: getUsageColor(parseFloat(server.cpu) || 0) }"></div>
                 </div>
                   <span>{{ (parseFloat(server.cpu) || 0).toFixed(1) }}%</span>
@@ -187,7 +191,7 @@
               </td>
               <td>
                 <div class="table-stat">
-                  <div class="stat-bar-container" style="width:60px;">
+                  <div class="stat-bar-container table-usage-bar">
                     <div class="stat-bar-fill" :style="{ width: (server.ram_total > 0 ? ((server.ram_used / server.ram_total) * 100).toFixed(2) : 0) + '%', background: getUsageColor(server.ram_total > 0 ? ((server.ram_used / server.ram_total) * 100) : 0) }"></div>
                   </div>
                   <span>{{ server.ram_total > 0 ? ((server.ram_used / server.ram_total) * 100).toFixed(2) : '0.00' }}%</span>
@@ -195,7 +199,7 @@
               </td>
               <td>
                 <div class="table-stat">
-                  <div class="stat-bar-container" style="width:60px;">
+                  <div class="stat-bar-container table-usage-bar">
                     <div class="stat-bar-fill" :style="{ width: (server.disk_total > 0 ? ((server.disk_used / server.disk_total) * 100).toFixed(2) : 0) + '%', background: getUsageColor(server.disk_total > 0 ? ((server.disk_used / server.disk_total) * 100) : 0) }"></div>
                   </div>
                   <span>{{ server.disk_total > 0 ? ((server.disk_used / server.disk_total) * 100).toFixed(2) : '0.00' }}%</span>
@@ -203,13 +207,16 @@
               </td>
               <td v-if="sysConfig.show_tf && server.traffic_limit">
                 <div class="table-stat">
-                  <div class="stat-bar-container stat-bar-small">
+                    <div class="stat-bar-container stat-bar-small table-usage-bar">
                     <div class="stat-bar-fill" :style="{ width: Math.min(100, calcTrafficUsagePercent(server)) + '%', background: getUsageColor(calcTrafficUsagePercent(server)) }"></div>
                   </div>
                   <span>{{ calcTrafficUsagePercent(server).toFixed(1) }}%</span>
                 </div>
               </td>
               <td v-else>-</td>
+              <td class="table-conn-cell">
+                <span class="conn-pair">{{ formatConnPair(server) }}</span>
+              </td>
               <td>{{ formatBytes(server.net_in_speed) }}/s</td>
               <td>{{ formatBytes(server.net_out_speed) }}/s</td>
               <td class="update-time label-small">{{ getUpdateTime(server.last_updated) }}</td>
@@ -298,6 +305,13 @@
       </div>
     </div>
 
+    <LiveConnectionTimeoutModal
+      :show="showLiveTimeoutModal"
+      :trans="trans"
+      @close="closeLiveConnection"
+      @continue="continueLiveConnection"
+    />
+
     <Footer />
   </div>
 </template>
@@ -310,7 +324,8 @@ import ServerBarCard from '../components/ServerBarCard.vue'
 import ServerRingCard from '../components/ServerRingCard.vue'
 import Footer from '../components/Footer.vue'
 import OsIcon from '../components/OsIcon.vue'
-import { fetchConfig, fetchServersAll, fetchServersAllWithProgress, formatBytes, createLiveSocket, getFlagRegionCode, getApiBases, isServerOnline } from '../utils/api.js'
+import LiveConnectionTimeoutModal from '../components/LiveConnectionTimeoutModal.vue'
+import { fetchConfig, fetchServersAll, fetchServersAllWithProgress, formatBytes, createLiveSocket, getFlagRegionCode, getApiBases, isServerOnline, normalizeLiveSocketTimeoutMinutes } from '../utils/api.js'
 import { calcTrafficUsagePercent, getUsageColor } from '../composables/useServerCardData'
 import { getTitle, hasMultipleApiBases, getPublicAssetUrl } from '../utils/config'
 import { currentLang, useTranslation } from '../utils/i18n.js'
@@ -340,7 +355,8 @@ const sysConfig = ref({
   show_price: true,
   show_expire: true,
   show_tf: true,
-  show_time: true,
+  show_three_net_details: false,
+  frontend_ws_timeout_minutes: normalizeLiveSocketTimeoutMinutes(appConfig?.frontend_ws_timeout_minutes),
   display_mode: 'bar',
   site_title: DEFAULT_SITE_TITLE,
   theme_options: normalizeThemeOptions(appConfig?.theme_options)
@@ -354,6 +370,7 @@ const isLoading = ref(true)
 const sitesRemaining = ref(0)
 const hasCorsError = ref(null)
 const financeModalOpen = ref(false)
+const showLiveTimeoutModal = ref(false)
 const financeCurrency = ref('CNY')
 const exchangeRates = ref(DEFAULT_EXCHANGE_RATES)
 const exchangeRateSource = ref('default')
@@ -488,6 +505,24 @@ const setFilter = (code) => {
 
 const getStatusColor = (server) => {
   return isServerOnline(server) ? 'var(--accent-green)' : 'var(--accent-red)'
+}
+
+const formatConnCount = (value) => {
+  const number = Number.parseInt(value, 10)
+  if (!Number.isFinite(number) || number < 0) return '0'
+  return number.toLocaleString('en-US')
+}
+
+const formatConnPair = (server) => `${formatConnCount(server.tcp_conn)} / ${formatConnCount(server.udp_conn)}`
+
+const formatSystemOs = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return 'N/A'
+  return raw
+    .replace(/\s+gnu\/linux(?=\s|$)/gi, '')
+    .replace(/\s+linux(?=\s|$)/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim() || raw
 }
 
 const getUpdateTime = (lastUpdated) => {
@@ -763,6 +798,7 @@ const loadDashboardConfig = async () => {
       ...sysConfig.value,
       site_title: hasMultipleApiBases() && localTitle ? localTitle : (siteTitle || sysConfig.value.site_title),
       display_mode: resolveDisplayMode(config),
+      frontend_ws_timeout_minutes: normalizeLiveSocketTimeoutMinutes(config?.frontend_ws_timeout_minutes),
       theme_options: normalizeThemeOptions(config?.theme_options)
     }
   } catch (e) {
@@ -792,7 +828,8 @@ const refreshData = async () => {
           show_price: data.sysConfig?.show_price ?? true,
           show_expire: data.sysConfig?.show_expire ?? true,
           show_tf: data.sysConfig?.show_tf ?? true,
-          show_time: data.sysConfig?.show_time ?? true,
+          show_three_net_details: data.sysConfig?.show_three_net_details ?? false,
+          frontend_ws_timeout_minutes: sysConfig.value.frontend_ws_timeout_minutes,
           display_mode: normalizeDisplayMode(data.sysConfig?.display_mode),
           site_title: sysConfig.value.site_title || DEFAULT_SITE_TITLE,
           theme_options: sysConfig.value.theme_options
@@ -829,7 +866,8 @@ const refreshData = async () => {
       show_price: data.sysConfig?.show_price ?? true,
       show_expire: data.sysConfig?.show_expire ?? true,
       show_tf: data.sysConfig?.show_tf ?? true,
-      show_time: data.sysConfig?.show_time ?? true,
+      show_three_net_details: data.sysConfig?.show_three_net_details ?? false,
+      frontend_ws_timeout_minutes: sysConfig.value.frontend_ws_timeout_minutes,
       display_mode: normalizeDisplayMode(data.sysConfig?.display_mode),
       site_title: sysConfig.value.site_title || DEFAULT_SITE_TITLE,
       theme_options: sysConfig.value.theme_options
@@ -848,6 +886,7 @@ const refreshData = async () => {
 //   - 订阅 "all"，收到任何服务器的更新都会合并对应 server 的指标
 // -------------------------------------------------------------------------
 let liveSockets = []
+let liveConnectionClosedByUser = false
 let themeObserver = null
 let timeUpdateInterval = null
 
@@ -884,7 +923,11 @@ const startLiveSocket = () => {
     const allIds = servers.value.map(s => s.id).filter(Boolean)
     liveSockets = [createLiveSocket('all', {
       replay: false,
+      timeoutMinutes: sysConfig.value.frontend_ws_timeout_minutes,
       onMessage: queueLiveMessage,
+      onTimeout: () => {
+        showLiveTimeoutModal.value = true
+      },
       onStatus: ({ connected }) => {
         liveConnected.value = !!connected
       }
@@ -898,7 +941,11 @@ const startLiveSocket = () => {
     if (!ids || ids.length === 0) return null
     return createLiveSocket('all', {
       replay: false,
+      timeoutMinutes: sysConfig.value.frontend_ws_timeout_minutes,
       onMessage: queueLiveMessage,
+      onTimeout: () => {
+        showLiveTimeoutModal.value = true
+      },
       onStatus: ({ connected }) => {
         const anyConnected = liveSockets.some(s => s && s.isConnected)
         liveConnected.value = anyConnected
@@ -907,9 +954,27 @@ const startLiveSocket = () => {
   }).filter(Boolean)
 }
 
+const closeLiveConnection = () => {
+  showLiveTimeoutModal.value = false
+  liveConnectionClosedByUser = true
+  stopLiveSockets()
+}
+
+const continueLiveConnection = () => {
+  showLiveTimeoutModal.value = false
+  liveConnectionClosedByUser = false
+  if (liveSockets.length === 0) {
+    startLiveSocket()
+    return
+  }
+  liveSockets.forEach(socket => socket?.reconnect())
+}
+
 const handleVisibility = () => {
   if (document.hidden) {
     stopLiveSockets()
+  } else if (showLiveTimeoutModal.value || liveConnectionClosedByUser) {
+    return
   } else if (liveSockets.length === 0) {
     startLiveSocket()
   } else {

@@ -192,6 +192,7 @@ Headers: (可选) Authorization: Bearer <jwt>, X-Turnstile-Token / X-Turnstile-V
   },
   "verified": false,
   "turnstile_verified": null,
+  "frontend_ws_timeout_minutes": 20,
   "long_history_points": 120
 }
 ```
@@ -212,6 +213,7 @@ Headers: (可选) Authorization: Bearer <jwt>, X-Turnstile-Token / X-Turnstile-V
 | `theme_options`      | object       | 第三方主题自定义配置；未配置时为空对象 |
 | `verified`           | boolean      | 当前请求是否已验证       |
 | `turnstile_verified` | string\|null | 已验证凭证，缓存复用 1 小时 |
+| `frontend_ws_timeout_minutes` | number | 前端实时订阅连接超时分钟数，范围 `0`-`1440`；默认 `0` 表示不超时 |
 | `long_history_points` | number      | 长历史查询返回的采样点数，可选 `60`、`120`、`180`、`240` |
 
 `theme_options` 对第三方主题是只读运行时配置。需要修改主题配置时，跳转到内置后台 `/admin#admin`，不要在第三方主题内调用管理端接口。
@@ -252,8 +254,7 @@ Headers: (按需) Authorization: Bearer <jwt>, X-Turnstile-Token/Verified
   "sysConfig": {
     "show_price": true,
     "show_expire": true,
-    "show_tf": true,
-    "show_time": true
+    "show_tf": true
   }
 }
 ```
@@ -367,9 +368,9 @@ Headers: (按需) Authorization, X-Turnstile-Token/Verified
 }
 ```
 
-`tags` 为英文逗号分隔字符串。`note` 属于管理端内部字段，不从 dashboard 公共接口返回。`disk` 为可选磁盘 IO 指标对象：`read_bps` / `write_bps` 单位为 B/s，`read_iops` / `write_iops` 为 IOPS，`await_ms` 为毫秒，`util` 为百分比；旧探针、旧数据缺失，或者 6 个子字段全为 0 时，API / WebSocket 不返回该对象，主题不应展示依赖磁盘 IO 的图表。`latestReportUpdates` 与 `/api/servers` 同名字段形状一致，REST 样本统一为 `{ ts, data }` 并按探针采样包透传；内置探针默认只在普通采样点上报 `cpu`、`ram_total`、`ram_used`、`swap_total`、`swap_used`、`net_in_speed`、`net_out_speed`，每次报告最后一个样本可能额外携带 `disk` 等报告级字段；缓存约 4 分钟，允许为空数组。`gpu` 已废弃，主题应使用 `gpu_info`；新版上报和 WebSocket 实时数据为 `[{ id, name, info }]` 数组，历史/详情 REST 响应中可能是同结构的 JSON 字符串。
+`tags` 为英文逗号分隔字符串。`note` 属于管理端内部字段，不从 dashboard 公共接口返回。`disk` 为可选磁盘 IO 指标对象：`read_bps` / `write_bps` 单位为 B/s，`read_iops` / `write_iops` 为 IOPS，`await_ms` 为毫秒，`util` 为百分比；旧探针、旧数据缺失，或者 6 个子字段全为 0 时，API / WebSocket 不返回该对象，主题不应展示依赖磁盘 IO 的图表。`latestReportUpdates` 与 `/api/servers` 同名字段形状一致，REST 样本统一为 `{ ts, data }` 并按探针批量采样包透传；内置探针默认只在普通采样点上报 `cpu`、`ram_total`、`ram_used`、`swap_total`、`swap_used`、`net_in_speed`、`net_out_speed`，每次报告最后一个样本可能额外携带 `disk` 等报告级字段；回放状态保留约 5 分钟，允许为空数组。`gpu` 已废弃，主题应使用 `gpu_info`；新版上报和 WebSocket 实时数据为 `[{ id, name, info }]` 数组，历史/详情 REST 响应中可能是同结构的 JSON 字符串。
 
-`ping` / `loss` 窗口数组仅在 `/api/servers` 的 `servers[]` 中返回，`/api/server` 详情接口不返回新增窗口数组。窗口固定 30 个点，覆盖约 1 小时，每 2 分钟一个槽位；点格式为 `{ ts, ct, cu, cm, bd }`，其中 `ct` / `cu` / `cm` / `bd` 分别对应不同探测线路。实际采样不足 30 个槽位时，后端会用时间最近的已有点补齐；若 DO/Worker 缓存窗口最后一点落后当前最新指标超过 2 分钟，后端会用本次响应已查询到的最新指标追加一组点，不增加额外查询。DO 实时状态在当前 Worker isolate 内短缓存约 4 分钟，缓存不跨 isolate 共享。
+`ping` / `loss` 窗口数组仅在 `/api/servers` 的 `servers[]` 中返回，`/api/server` 详情接口不返回新增窗口数组。窗口固定 30 个点，覆盖约 1 小时，每 2 分钟一个槽位；点格式为 `{ ts, ct, cu, cm, bd }`，其中 `ct` / `cu` / `cm` / `bd` 分别对应不同探测线路。实际采样不足 30 个槽位时，后端会用时间最近的已有点补齐；若 DO/Worker 缓存窗口最后一点落后当前最新指标超过 2 分钟，后端会用本次响应已查询到的最新指标追加一组点，不增加额外查询。DO 延迟窗口在当前 Worker isolate 内短缓存约 2 分钟，缓存不跨 isolate 共享。
 
 **失败返回**：
 
@@ -514,6 +515,8 @@ Headers: Upgrade: websocket, Connection: Upgrade
 **页面可见性建议**：
 
 为实现前端展示效果并节省额度消耗，主题应监听 `document.visibilitychange`，页面进入后台或隐藏时主动关闭 WebSocket，页面重新可见时再按当前页面类型重新连接并恢复订阅。关闭连接后可保留最后一次数据用于静态展示；重新可见时建议先按当前页面补一次 REST 数据，再恢复 WebSocket 实时更新。
+
+主题还应读取 `/api/config` 的 `frontend_ws_timeout_minutes`。值为 `0` 时不按连接时长断开；值为正整数时，应在单次连接达到对应分钟数后主动关闭，并由用户明确选择是否继续连接。继续后应建立新连接并重新开始计时，不应在用户选择关闭后静默重连。
 
 **推送策略**：
 
@@ -716,7 +719,6 @@ interface SysConfig {
   show_price?: boolean;
   show_expire?: boolean;
   show_tf?: boolean;
-  show_time?: boolean;
   long_history_points?: number;
 }
 
@@ -733,6 +735,7 @@ interface SiteConfig {
   theme_options: Record<string, unknown>;
   verified: boolean;
   turnstile_verified: string | null;
+  frontend_ws_timeout_minutes: number;
   long_history_points: number;
 }
 

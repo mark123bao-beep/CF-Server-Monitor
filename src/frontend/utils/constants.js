@@ -1,4 +1,5 @@
 export const DEFAULT_SITE_TITLE = 'Cloudflare Server Monitor'
+export const FRONTEND_WS_TIMEOUT_MINUTES_MAX = 1440
 
 export const TIME = {
   ONLINE_THRESHOLD_MS: 300000,
@@ -22,8 +23,9 @@ export const HISTORY = {
 }
 
 export const PING = {
-  GOOD_THRESHOLD: 100,
-  WARNING_THRESHOLD: 200
+  GOOD_THRESHOLD: 80,
+  WARNING_THRESHOLD: 160,
+  CRITICAL_THRESHOLD: 240
 }
 
 export const STORAGE = {

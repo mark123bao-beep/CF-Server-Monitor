@@ -511,6 +511,7 @@ CORS_ALLOWED_ORIGINS=https://status.example.com,https://admin.example.com
     "a": 1,
     "b": 2
   },
+  "frontend_ws_timeout_minutes": 20,
   "long_history_points": 120
 }
 ```
@@ -530,6 +531,7 @@ CORS_ALLOWED_ORIGINS=https://status.example.com,https://admin.example.com
 | `last_workers_version` | string\|null | **仅登录时出现**；远程最新 Workers 版本，来源为 GitHub `version.json`，后端缓存 5 分钟 |
 | `last_agent_version` | string\|null | **仅登录时出现**；远程最新 Agent 版本，来源为 GitHub `version.json`，后端缓存 5 分钟 |
 | `theme_options`      | object       | 第三方主题自定义配置；未配置时为空对象，匿名请求也会返回 |
+| `frontend_ws_timeout_minutes` | number | 前端实时订阅连接超时分钟数，范围 `0`-`1440`；默认 `0` 表示不超时 |
 | `long_history_points` | number      | 长历史查询返回的采样点数，后台可选 `60`、`120`、`180`、`240` |
 
 > ~~`X-Turnstile-Token` 携带且验证成功时，响应头会同步设置 `X-Turnstile-Verified`。~~ **2026-07-26 修订**：当前前端从响应体的 `turnstile_verified` 保存凭证；响应 Header 尚未实际写入。
@@ -584,7 +586,6 @@ CORS_ALLOWED_ORIGINS=https://status.example.com,https://admin.example.com
     "show_price": true,
     "show_expire": true,
     "show_tf": true,
-    "show_time": true,
     "display_mode": "bar"
   }
 }
@@ -593,12 +594,12 @@ CORS_ALLOWED_ORIGINS=https://status.example.com,https://admin.example.com
 | 字段            | 说明                                                                    |
 | ------------- | --------------------------------------------------------------------- |
 | `servers`     | 已合并最新指标的服务器列表（按 `sort_order ASC`），未登录用户**自动过滤** **`is_hidden = '1'`** |
-| `latestReportUpdates` | 每台服务器最近一次批量上报的采样回放数据，用于新页面连续回放；来自 Worker/DO 内存缓存，缓存约 4 分钟，进程重启或 DO 回收后允许为空。REST 响应中的样本统一为 `{ ts, data }`，`data` 按探针批量采样包透传；内置探针默认只在普通采样点上报 `cpu`、`ram_total`、`ram_used`、`swap_total`、`swap_used`、`net_in_speed`、`net_out_speed` |
+| `latestReportUpdates` | 每台服务器最近一次批量上报的采样回放数据，用于新页面连续回放；来自 Worker/DO 内存状态，保留约 5 分钟，进程重启或 DO 回收后允许为空。REST 响应中的样本统一为 `{ ts, data }`，`data` 按探针批量采样包透传；内置探针默认只在普通采样点上报 `cpu`、`ram_total`、`ram_used`、`swap_total`、`swap_used`、`net_in_speed`、`net_out_speed` |
 | `stats`       | 聚合统计：在线阈值 300 秒（5 分钟无上报视为离线）                                          |
 | `regionStats` | 按 ISO 区域码（大写）统计的服务器数                                                  |
-| `sysConfig`   | 当前站点开关：`show_price`、`show_expire`、`show_tf`、`show_time`、`display_mode`。主题配置请从 `/api/config` 的 `theme_options` 读取。~~旧版示例中的 `site_title` 不在该对象内。~~（2026-07-26 修订） |
+| `sysConfig`   | 当前站点开关：`show_price`、`show_expire`、`show_tf`、`display_mode`。主题配置请从 `/api/config` 的 `theme_options` 读取。~~旧版示例中的 `site_title` 不在该对象内。~~（2026-07-26 修订） |
 
-> `/api/servers` 的 `latestReportUpdates` 与 `servers[].ping` / `servers[].loss` 读取自 DO 实时状态，并在当前 Worker isolate 内短缓存约 4 分钟。该缓存不跨 isolate 共享，冷启动或缓存过期时会回源 DO。
+> `/api/servers` 的 `latestReportUpdates` 每次请求都会读取 DO 实时状态，并与当前 Worker isolate 内约 5 分钟的最近上报回放合并。`servers[].ping` / `servers[].loss` 读取自 DO，并在当前 Worker isolate 内短缓存约 2 分钟；该窗口缓存不跨 isolate 共享，冷启动或缓存过期时会回源 DO。
 
 ***
 
@@ -703,7 +704,7 @@ CORS_ALLOWED_ORIGINS=https://status.example.com,https://admin.example.com
 ```
 
 > `last_updated` 来自最新指标；`timestamp` 是服务器配置记录的创建/导入时间字段，普通编辑不会刷新它。~~两者都表示最近上报时间。~~（2026-07-26 修订）
-> `/api/server` 详情接口不返回新增的 `ping` / `loss` 窗口数组；详情页仍可使用 `ping_ct` / `ping_cu` / `ping_cm` / `ping_bd` 与 `loss_ct` / `loss_cu` / `loss_cm` / `loss_bd` 当前单点值。`latestReportUpdates` 与 `/api/servers` 同名字段形状一致，仅包含当前服务器最近一次批量上报的采样回放包；用于详情页打开时连续回放。REST 样本统一为 `{ ts, data }`，`data` 按探针采样包透传。缓存约 4 分钟，Worker/DO 重启后允许为空数组。
+> `/api/server` 详情接口不返回新增的 `ping` / `loss` 窗口数组；详情页仍可使用 `ping_ct` / `ping_cu` / `ping_cm` / `ping_bd` 与 `loss_ct` / `loss_cu` / `loss_cm` / `loss_bd` 当前单点值。`latestReportUpdates` 与 `/api/servers` 同名字段形状一致，仅包含当前服务器最近一次批量上报的采样回放包；用于详情页打开时连续回放。REST 样本统一为 `{ ts, data }`，`data` 按探针采样包透传。回放状态保留约 5 分钟，Worker/DO 重启后允许为空数组。
 
 **失败返回**：
 
@@ -1244,7 +1245,7 @@ Header：`X-Turnstile-Token: <token>`（当 `site_options.turnstile_enabled` 或
     "show_price": "true",
     "show_expire": "true",
     "show_tf": "true",
-    "show_time": "true",
+    "frontend_ws_timeout_minutes": "20",
     "long_history_points": "120",
     "tg_notify": "0",
     "tg_bot_token": "",
@@ -1270,7 +1271,7 @@ Header：`X-Turnstile-Token: <token>`（当 `site_options.turnstile_enabled` 或
 **字段分类**：
 
 - `APPEARANCE_FIELDS`（写入 `appearance_options` JSON）：`site_title`、`custom_bg`、`custom_head`、`custom_script`、`csp_static`、`csp_api`、`display_mode`、`theme_options`
-- `SITE_FIELDS`（写入 `site_options` JSON）：`is_public`、`show_price`、`show_expire`、`show_tf`、`show_time`、`long_history_points`、通知、Turnstile、账号、Cloudflare、Ping 节点、`expire_reminder`、`theme_url`、历史优化字段等站点级配置
+- `SITE_FIELDS`（写入 `site_options` JSON）：`is_public`、`show_price`、`show_expire`、`show_tf`、`frontend_ws_timeout_minutes`、`long_history_points`、通知、Turnstile、账号、Cloudflare、Ping 节点、`expire_reminder`、`theme_url`、历史优化字段等站点级配置
 - 任何未列出的字段会被忽略
 
 **特殊处理**：
@@ -1281,6 +1282,7 @@ Header：`X-Turnstile-Token: <token>`（当 `site_options.turnstile_enabled` 或
 - Turnstile：本次请求把 `turnstile_enabled` 或 `turnstile_login_enabled` 设为 `true` 时，必须同时提供非空 `turnstile_site_key` 与 `turnstile_secret_key`
 - 通知：规范化后的 `tg_notify` 非 `0`，或 `expire_reminder` 为 `1`-`7` 时，必须提供非空 `tg_bot_token`
 - `appearance_options` / `theme_options`：必须是非数组对象；`display_mode` 规范为 `bar` / `ring` / `table`
+- `frontend_ws_timeout_minutes`：规范为 `0`-`1440` 的整数分钟；缺失或非法值回退为 `0`，即前端连接不超时
 - `csp_static` / `csp_api`：逗号分隔，只保留不带凭据、路径、查询或 fragment 的 HTTPS origin，非法项会被静默过滤
 - 外观设置不是字段级合并：请求中只要出现任一外观字段或 `appearance_options`，后端就会用本次提供的外观字段重写整个 `appearance_options` JSON；部分更新时应先读取并回传完整外观对象
 - `jwt_secret` 不在保存阶段校验长度；只有长度至少 32 的值会用于签名，空值或短值在下一次加载设置时会被新生成并持久化的随机密钥替换
@@ -1753,7 +1755,7 @@ UUID 缺失或格式非法时返回 `400 { "error": "invalidServerId", "code": 4
   show_price: 'true' | 'false',
   show_expire: 'true' | 'false',
   show_tf: 'true' | 'false',
-  show_time: 'true' | 'false',
+  frontend_ws_timeout_minutes: string, // '0'-'1440'；0 = 不超时
   long_history_points: '60' | '120' | '180' | '240',
   tg_notify: '0' | '2' ... '30',    // 0 = 关闭；旧值 false 兼容为 0，true 兼容为 5
   tg_bot_token: string,
@@ -1941,6 +1943,7 @@ curl -X POST https://status.example.com/admin/api \
     "settings":{
       "site_title":"My Status",
       "is_public":"true",
+      "frontend_ws_timeout_minutes":"20",
       "long_history_points":"120",
       "turnstile_enabled":"true",
       "turnstile_site_key":"1x00000000000000000000AA",
@@ -2022,6 +2025,7 @@ curl -X POST https://status.example.com/admin/api \
 
 ## 9. 版本与变更说明
 
+- **2026-08-20**：新增 `frontend_ws_timeout_minutes` 站点设置与 `/api/config` 字段；默认 `0` 不超时，正整数表示前端实时订阅连接的分钟级寿命上限。
 - **2026-07-26**：重新同步 `main` 源码；当前 Workers 版本为 `2.8.0 Beta`，Agent 版本为 `1.3.2`。补充主题商店、主题代理、最新批次缓存、测试通知、服务器导入/导出及探针动态配置，修正鉴权、历史查询、WebSocket、数据库维护和数据结构说明。
 - ~~**v1.x**：当前文档对应早期 `src/index.js`、`src/handlers/*`、`src/database/schema.js` 主线实现。~~ **2026-07-26 修订**：文档现以 `2.8.0 Beta` 的 `main` 分支实现为准。
 - **Breaking change**：`/admin/api` 由 `GET?action=...` 改为 `POST {action:...}` 模式，Token 校验与 Turnstile 走 Header 通道。
