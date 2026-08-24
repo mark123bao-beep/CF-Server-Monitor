@@ -19,7 +19,7 @@ const THREE_NET_DEFS = [
   { key: 'cm', pingField: 'ping_cm', lossField: 'loss_cm', labelKey: 'pingCm', fallbackLabel: 'CM' }
 ]
 
-const DEFAULT_THREE_NET_POINT_COUNT = 30
+const DEFAULT_THREE_NET_POINT_COUNT = 20
 
 const normalizeLatencyTimestamp = (value, fallback = 0) => {
   const timestamp = Number(value)
@@ -379,7 +379,7 @@ export function useServerCardData(props) {
           ping,
           loss,
           pingHeight: hasPing ? 84 : 25,
-          lossHeight: 84,
+          lossHeight: hasLoss ? 84 : 25,
           pingColor: hasPing ? getPingColor(ping) : 'var(--accent-red)',
           lossColor: offline ? 'var(--accent-red)' : getLossColor(loss),
           pingOpacity: hasPing ? 0.94 : 0.52,
@@ -410,7 +410,7 @@ export function useServerCardData(props) {
     { label: 'CT', value: props.server.ping_ct },
     { label: 'CU', value: props.server.ping_cu },
     { label: 'CM', value: props.server.ping_cm },
-    { label: 'BD', value: props.server.ping_bd }
+    { label: 'BGP', value: props.server.ping_bd }
   ].filter(ping => !isPingDisabled(ping.value)))
 
   const hasPingData = computed(() => pingList.value.length > 0)
