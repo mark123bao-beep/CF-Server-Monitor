@@ -252,6 +252,10 @@
         :custom-cu="customCu"
         :custom-cm="customCm"
         :custom-bd="customBd"
+        :node-1="node1"
+        :node-2="node2"
+        :node-3="node3"
+        :node-4="node4"
         :network-interface="networkInterface"
         :reset-day="resetDay"
         :rx-correction="rxCorrection"
@@ -1009,6 +1013,7 @@ const editForm = ref({
   custom_cu: '',
   custom_cm: '',
   custom_bd: '',
+  node_1: '', node_2: '', node_3: '', node_4: '',
   rx_correction: '',
   tx_correction: '',
   auto_update: false,
@@ -1038,6 +1043,7 @@ const createBatchEditDefaults = () => ({
   custom_cu: '',
   custom_cm: '',
   custom_bd: '',
+  node_1: '', node_2: '', node_3: '', node_4: '',
   rx_correction: '',
   tx_correction: '',
   auto_update: false,
@@ -1092,6 +1098,11 @@ const customCt = ref('')
 const customCu = ref('')
 const customCm = ref('')
 const customBd = ref('')
+const node1 = ref('')
+const node2 = ref('')
+const node3 = ref('')
+const node4 = ref('')
+const explicitEmptyNodes = ref({})
 const networkInterface = ref('')
 const resetDay = ref(1)
 const rxCorrection = ref('')
@@ -1119,6 +1130,7 @@ const getPingNodeLabel = (field) => ({
   custom_cu: settings.value.custom_cu_name || trans.value.customCu,
   custom_cm: settings.value.custom_cm_name || trans.value.customCm,
   custom_bd: settings.value.custom_bd_name || trans.value.customBd
+  ,node_1: settings.value.node_1_name || 'Node 1', node_2: settings.value.node_2_name || 'Node 2', node_3: settings.value.node_3_name || 'Node 3', node_4: settings.value.node_4_name || 'Node 4'
 })[field] || field
 
 const getPingNodeValidation = (source) => {
@@ -1380,10 +1392,12 @@ const loadSettings = async () => {
         custom_cu: settingsData.custom_cu || '',
         custom_cm: settingsData.custom_cm || '',
         custom_bd: settingsData.custom_bd || '',
+        node_1: settingsData.node_1 || '', node_2: settingsData.node_2 || '', node_3: settingsData.node_3 || '', node_4: settingsData.node_4 || '',
         custom_ct_name: settingsData.custom_ct_name || '电信',
         custom_cu_name: settingsData.custom_cu_name || '联通',
         custom_cm_name: settingsData.custom_cm_name || '移动',
         custom_bd_name: settingsData.custom_bd_name || 'BGP',
+        node_1_name: settingsData.node_1_name || 'Node 1', node_2_name: settingsData.node_2_name || 'Node 2', node_3_name: settingsData.node_3_name || 'Node 3', node_4_name: settingsData.node_4_name || 'Node 4',
         theme_url: settingsData.theme_url || '',
         csp_static: settingsData.csp_static || '',
         csp_api: settingsData.csp_api || ''
@@ -1555,10 +1569,12 @@ const saveSettings = async () => {
       custom_cu: pingNodeValidation.values.custom_cu,
       custom_cm: pingNodeValidation.values.custom_cm,
       custom_bd: pingNodeValidation.values.custom_bd,
+      node_1: pingNodeValidation.values.node_1, node_2: pingNodeValidation.values.node_2, node_3: pingNodeValidation.values.node_3, node_4: pingNodeValidation.values.node_4,
       custom_ct_name: settings.value.custom_ct_name.trim(),
       custom_cu_name: settings.value.custom_cu_name.trim(),
       custom_cm_name: settings.value.custom_cm_name.trim(),
       custom_bd_name: settings.value.custom_bd_name.trim(),
+      node_1_name: settings.value.node_1_name.trim(), node_2_name: settings.value.node_2_name.trim(), node_3_name: settings.value.node_3_name.trim(), node_4_name: settings.value.node_4_name.trim(),
       csp_static: settings.value.csp_static || '',
       csp_api: settings.value.csp_api || ''
     }
@@ -1641,6 +1657,15 @@ const getInstallCommand = (serverId) => {
   return `curl -sL ${HOST}/install.sh | bash -s install -id=${serverId} -secret='${apiSecret.value}' -url=${HOST}/update`
 }
 
+const resolveServerPingNode = (server, field) => {
+  const value = server?.[field]
+  const explicitEmpty = value === null || value === 0 || value === '0'
+  return {
+    value: explicitEmpty ? '' : (value || settings.value[field] || ''),
+    explicitEmpty
+  }
+}
+
 const getUninstallCommand = () => {
   const HOST = selectedApiBase.value
   const isGo = deleteVersion.value === 'go'
@@ -1679,10 +1704,28 @@ const copyCmd = (serverId) => {
   wssReportInterval.value = server?.wss_report_interval || 2
   connectionMode.value = getEffectiveConnectionMode(server?.connection_mode)
   pingMode.value = getEffectivePingMode(server?.ping_mode)
-  customCt.value = server?.custom_ct || settings.value.custom_ct
-  customCu.value = server?.custom_cu || settings.value.custom_cu
-  customCm.value = server?.custom_cm || settings.value.custom_cm
-  customBd.value = server?.custom_bd || settings.value.custom_bd
+  const customCtNode = resolveServerPingNode(server, 'custom_ct')
+  const customCuNode = resolveServerPingNode(server, 'custom_cu')
+  const customCmNode = resolveServerPingNode(server, 'custom_cm')
+  const customBdNode = resolveServerPingNode(server, 'custom_bd')
+  const node1Value = resolveServerPingNode(server, 'node_1')
+  const node2Value = resolveServerPingNode(server, 'node_2')
+  const node3Value = resolveServerPingNode(server, 'node_3')
+  const node4Value = resolveServerPingNode(server, 'node_4')
+  explicitEmptyNodes.value = {
+    custom_ct: customCtNode.explicitEmpty, custom_cu: customCuNode.explicitEmpty,
+    custom_cm: customCmNode.explicitEmpty, custom_bd: customBdNode.explicitEmpty,
+    node_1: node1Value.explicitEmpty, node_2: node2Value.explicitEmpty,
+    node_3: node3Value.explicitEmpty, node_4: node4Value.explicitEmpty
+  }
+  customCt.value = customCtNode.value
+  customCu.value = customCuNode.value
+  customCm.value = customCmNode.value
+  customBd.value = customBdNode.value
+  node1.value = node1Value.value
+  node2.value = node2Value.value
+  node3.value = node3Value.value
+  node4.value = node4Value.value
   networkInterface.value = server?.interface || ''
   resetDay.value = server?.reset_day ?? 1
   rxCorrection.value = server?.rx_correction ?? ''
@@ -1723,10 +1766,11 @@ const getCustomInstallCommand = () => {
       `-reset_day='${resetDay.value ?? 1}'`,
       `-auto_update='${autoUpdateFlag}'`
     )
-    if (customCt.value) params.push(`-ct='${customCt.value}'`)
-    if (customCu.value) params.push(`-cu='${customCu.value}'`)
-    if (customCm.value) params.push(`-cm='${customCm.value}'`)
-    if (customBd.value) params.push(`-bd='${customBd.value}'`)
+    if (customCt.value || explicitEmptyNodes.value.custom_ct) params.push(`-ct='${customCt.value}'`)
+    if (customCu.value || explicitEmptyNodes.value.custom_cu) params.push(`-cu='${customCu.value}'`)
+    if (customCm.value || explicitEmptyNodes.value.custom_cm) params.push(`-cm='${customCm.value}'`)
+    if (customBd.value || explicitEmptyNodes.value.custom_bd) params.push(`-bd='${customBd.value}'`)
+    if (node1.value || explicitEmptyNodes.value.node_1) params.push(`-node_1='${node1.value}'`); if (node2.value || explicitEmptyNodes.value.node_2) params.push(`-node_2='${node2.value}'`); if (node3.value || explicitEmptyNodes.value.node_3) params.push(`-node_3='${node3.value}'`); if (node4.value || explicitEmptyNodes.value.node_4) params.push(`-node_4='${node4.value}'`)
     if (networkInterface.value) params.push(`-interface='${networkInterface.value}'`)
     if (hasCorrectionValue(rxCorrection.value)) params.push(`-rx_correction='${rxCorrection.value}'`)
     if (hasCorrectionValue(txCorrection.value)) params.push(`-tx_correction='${txCorrection.value}'`)
@@ -1746,10 +1790,11 @@ const getCustomInstallCommand = () => {
     `-reset_day=${resetDay.value ?? 1}`,
     `-auto_update=${autoUpdateFlag}`
   )
-  if (customCt.value) params.push(`-ct=${customCt.value}`)
-  if (customCu.value) params.push(`-cu=${customCu.value}`)
-  if (customCm.value) params.push(`-cm=${customCm.value}`)
-  if (customBd.value) params.push(`-bd=${customBd.value}`)
+  if (customCt.value || explicitEmptyNodes.value.custom_ct) params.push(`-ct='${customCt.value}'`)
+  if (customCu.value || explicitEmptyNodes.value.custom_cu) params.push(`-cu='${customCu.value}'`)
+  if (customCm.value || explicitEmptyNodes.value.custom_cm) params.push(`-cm='${customCm.value}'`)
+  if (customBd.value || explicitEmptyNodes.value.custom_bd) params.push(`-bd='${customBd.value}'`)
+  if (node1.value || explicitEmptyNodes.value.node_1) params.push(`-node_1='${node1.value}'`); if (node2.value || explicitEmptyNodes.value.node_2) params.push(`-node_2='${node2.value}'`); if (node3.value || explicitEmptyNodes.value.node_3) params.push(`-node_3='${node3.value}'`); if (node4.value || explicitEmptyNodes.value.node_4) params.push(`-node_4='${node4.value}'`)
   if (networkInterface.value) params.push(`-interface=${networkInterface.value}`)
   if (hasCorrectionValue(rxCorrection.value)) params.push(`-rx_correction=${rxCorrection.value}`)
   if (hasCorrectionValue(txCorrection.value)) params.push(`-tx_correction=${txCorrection.value}`)
@@ -1818,10 +1863,11 @@ const createEditFormFromServer = (server) => ({
     wss_report_interval: server.wss_report_interval || 2,
     connection_mode: getEffectiveConnectionMode(server.connection_mode),
     ping_mode: server.ping_mode === 'icmp' ? 'icmp' : 'tcp',
-    custom_ct: server.custom_ct || '',
-    custom_cu: server.custom_cu || '',
-    custom_cm: server.custom_cm || '',
-    custom_bd: server.custom_bd || '',
+    custom_ct: server.custom_ct ?? '',
+    custom_cu: server.custom_cu ?? '',
+    custom_cm: server.custom_cm ?? '',
+    custom_bd: server.custom_bd ?? '',
+    node_1: server.node_1 ?? '', node_2: server.node_2 ?? '', node_3: server.node_3 ?? '', node_4: server.node_4 ?? '',
     rx_correction: server.rx_correction ?? '',
     tx_correction: server.tx_correction ?? '',
     auto_update: server.auto_update === '1' || server.auto_update === 1 || server.auto_update === true,
@@ -1906,6 +1952,7 @@ const buildEditPayloadFromForm = (form) => {
       custom_cu: pingNodeValidation.values.custom_cu,
       custom_cm: pingNodeValidation.values.custom_cm,
       custom_bd: pingNodeValidation.values.custom_bd,
+      node_1: pingNodeValidation.values.node_1, node_2: pingNodeValidation.values.node_2, node_3: pingNodeValidation.values.node_3, node_4: pingNodeValidation.values.node_4,
       rx_correction: form.rx_correction,
       tx_correction: form.tx_correction,
       auto_update: form.auto_update ? '1' : '0',
@@ -1971,6 +2018,7 @@ const saveEdit = async () => {
     custom_cu: pingNodeValidation.values.custom_cu,
     custom_cm: pingNodeValidation.values.custom_cm,
     custom_bd: pingNodeValidation.values.custom_bd,
+    node_1: pingNodeValidation.values.node_1, node_2: pingNodeValidation.values.node_2, node_3: pingNodeValidation.values.node_3, node_4: pingNodeValidation.values.node_4,
     rx_correction: editForm.value.rx_correction,
     tx_correction: editForm.value.tx_correction,
     auto_update: editForm.value.auto_update ? '1' : '0',
