@@ -148,7 +148,6 @@
           :change-admin-password="changeAdminPassword"
           :test-notification-loading="testNotificationLoading"
           :d1-usage-loading="d1UsageLoading"
-          :traffic-baseline-rebuilding="trafficBaselineRebuilding"
           :github-binding-loading="githubBindingLoading"
           @toggle-password="togglePassword"
           @toggle-admin-password-change="toggleAdminPasswordChange"
@@ -158,7 +157,6 @@
           @upload-favicon="uploadFavicon"
           @send-test-notification="sendTestNotification"
           @query-d1-usage="queryD1Usage"
-          @rebuild-traffic-baselines="rebuildTrafficBaselines"
           @bind-github-account="bindGithubAccount"
           @alert-message="alertMessage = $event"
         />
@@ -661,11 +659,10 @@ const normalizeTgNotifySetting = (value) => {
   if (value === false || value === 'false' || value === undefined || value === null || value === '') return '0'
 
   const minutes = Number(value)
-  if (Number.isInteger(minutes) && (minutes === 0 || (minutes >= 2 && minutes <= 30))) {
-    return String(minutes)
-  }
-
-  return '0'
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 30) return '0'
+  if (minutes === 0) return '0'
+  // 最小 5 分钟：低于 5 的历史值（如 2、3、4）统一提升到 5
+  return String(Math.max(minutes, 5))
 }
 
 const isTgNotifyEnabled = (value) => normalizeTgNotifySetting(value) !== '0'
@@ -952,7 +949,6 @@ const settings = ref({
   tg_chat_id: '',
   notification_timezone: 'UTC',
   expire_notification_time: '12',
-  traffic_report_enabled: false,
   notification_webhook_enabled: false,
   notification_webhook_url: '',
   notification_webhook_method: 'POST',
@@ -1010,7 +1006,7 @@ const toggleAdminPasswordChange = () => {
 }
 
 const { visibility: passwordVisible, toggle: togglePassword } = usePasswordVisibility([
-  'login', 'tgBotToken', 'tgChatId', 'notificationWebhookUrl', 'turnstileSecret', 'githubClientSecret', 'cloudflareToken', 'jwtSecret', 'password', 'confirmPassword'
+  'login', 'tgBotToken', 'tgChatId', 'notificationWebhookUrl', 'smtpPassword', 'turnstileSecret', 'githubClientSecret', 'cloudflareToken', 'jwtSecret', 'password', 'confirmPassword'
 ])
 
 const {
@@ -1109,7 +1105,6 @@ const dbLoading = ref(false)
 const dbResult = ref(null)
 const d1UsageLoading = ref(false)
 const d1UsageResult = ref(null)
-const trafficBaselineRebuilding = ref(false)
 const githubBindingLoading = ref(false)
 const validationError = ref(null)
 const alertMessage = ref(null)
@@ -1462,7 +1457,6 @@ const loadSettings = async () => {
         tg_chat_id: settingsData.tg_chat_id || '',
         notification_timezone: normalizeNotificationTimezoneSetting(settingsData.notification_timezone),
         expire_notification_time: normalizeExpireNotificationTimeSetting(settingsData.expire_notification_time),
-        traffic_report_enabled: settingsData.traffic_report_enabled === 'true' || settingsData.traffic_report_enabled === true,
         notification_webhook_enabled: settingsData.notification_webhook_enabled === 'true' || settingsData.notification_webhook_enabled === true,
         notification_webhook_url: settingsData.notification_webhook_url || '',
         notification_webhook_method: String(settingsData.notification_webhook_method || 'POST').toUpperCase() === 'GET' ? 'GET' : 'POST',
@@ -1605,8 +1599,7 @@ const saveSettings = async () => {
     }
   }
 
-  const isTrafficReportEnabled = settings.value.traffic_report_enabled
-  if (isTgNotifyEnabled(settings.value.tg_notify) || isExpireReminderEnabled(settings.value.expire_reminder) || isResourceAlertEnabled(settings.value.resource_alert_rules) || isTrafficReportEnabled) {
+  if (isTgNotifyEnabled(settings.value.tg_notify) || isExpireReminderEnabled(settings.value.expire_reminder) || isResourceAlertEnabled(settings.value.resource_alert_rules)) {
     if (isNotificationWebhookEnabled()) {
       if (!settings.value.notification_webhook_url || settings.value.notification_webhook_url.trim().length === 0) {
         validationError.value = trans.value.notificationWebhookUrlRequired || 'Webhook URL is required'
@@ -1634,6 +1627,10 @@ const saveSettings = async () => {
     const cspStaticValid = settingsPanelRef.value.validateCspField('csp_static')
     const cspApiValid = settingsPanelRef.value.validateCspField('csp_api')
     if (!cspStaticValid || !cspApiValid) {
+      return
+    }
+    if (!settingsPanelRef.value.validateSmtpFields()) {
+      validationError.value = trans.value.smtpConfigInvalid || 'SMTP configuration is incomplete, please check the SMTP settings'
       return
     }
   }
@@ -1672,7 +1669,6 @@ const saveSettings = async () => {
       tg_chat_id: settings.value.tg_chat_id,
       notification_timezone: normalizeNotificationTimezoneSetting(settings.value.notification_timezone),
       expire_notification_time: normalizeExpireNotificationTimeSetting(settings.value.expire_notification_time),
-      traffic_report_enabled: settings.value.traffic_report_enabled ? 'true' : 'false',
       notification_webhook_enabled: settings.value.notification_webhook_enabled ? 'true' : 'false',
       notification_webhook_url: settings.value.notification_webhook_url,
       notification_webhook_method: settings.value.notification_webhook_method === 'GET' ? 'GET' : 'POST',
@@ -1736,6 +1732,7 @@ const saveSettings = async () => {
     saving.value = false
   }
 }
+
 
 const bindGithubAccount = async () => {
   if (githubBindingLoading.value) return
@@ -2551,37 +2548,11 @@ const queryD1Usage = async () => {
   }
 }
 
-const rebuildTrafficBaselines = async () => {
-  if (trafficBaselineRebuilding.value) return
-
-  trafficBaselineRebuilding.value = true
-  try {
-    const result = await adminApiForSite({
-      action: 'rebuild_traffic_baselines',
-      notification_timezone: normalizeNotificationTimezoneSetting(settings.value.notification_timezone),
-      expire_notification_time: normalizeExpireNotificationTimeSetting(settings.value.expire_notification_time)
-    })
-    if (result.error) {
-      alertMessage.value = getMessage(result.error) || result.error || trans.value.rebuildTrafficBaselinesFailed
-      return
-    }
-
-    const stats = result.data || {}
-    const resultTemplate = trans.value.rebuildTrafficBaselinesSuccess ||
-      'Traffic baselines initialized: {updated} succeeded, {failed} failed, {skipped} skipped.'
-    alertMessage.value = resultTemplate
-      .replace('{updated}', String(Number(stats.updated) || 0))
-      .replace('{failed}', String(Number(stats.failed) || 0))
-      .replace('{skipped}', String(Number(stats.skipped) || 0))
-  } catch (e) {
-    alertMessage.value = `${trans.value.rebuildTrafficBaselinesFailed || 'Failed to initialize traffic baselines'}: ${e.message}`
-  } finally {
-    trafficBaselineRebuilding.value = false
-  }
-}
-
 const sendTestNotification = async () => {
   if (testNotificationLoading.value) return
+  if (settingsPanelRef.value && !settingsPanelRef.value.validateSmtpFields()) {
+    return
+  }
   testNotificationLoading.value = true
   try {
     const result = await adminApiForSite({
